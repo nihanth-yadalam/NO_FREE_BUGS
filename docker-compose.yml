@@ -9,7 +9,6 @@ services:
       POSTGRES_USER: bank_user
       POSTGRES_PASSWORD: bank_password
       POSTGRES_DB: bank_db
-    # Note: No 'ports' mapping here means it's not accessible from your host machine
     networks:
       - bank-internal
     volumes:
@@ -46,9 +45,25 @@ services:
     networks:
       - vaultguard-net
 
+  # The VaultGuard Frontend (React + Vite)
+  vaultguard-frontend:
+    build: ./vaultguard-frontend
+    container_name: vaultguard-ui
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8080
+    volumes:
+      - ./vaultguard-frontend:/app
+      - /app/node_modules # Prevents local node_modules from overwriting container's
+    # depends_on:
+    #   - vaultguard-backend
+    networks:
+      - vaultguard-net
+
 networks:
   vaultguard-net:
     driver: bridge
   bank-internal:
     driver: bridge
-    internal: true # This further restricts external traffic
+    internal: true
