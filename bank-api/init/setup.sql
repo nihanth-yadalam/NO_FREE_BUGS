@@ -2,7 +2,9 @@ CREATE TABLE accounts (
     id SERIAL PRIMARY KEY,
     account_number VARCHAR(20) UNIQUE NOT NULL,
     ifsc_code VARCHAR(11) NOT NULL,
-    balance DECIMAL(15, 2) DEFAULT 0.00
+    balance DECIMAL(15, 2) DEFAULT 0.00,
+    email VARCHAR(255) UNIQUE,
+    password_hash VARCHAR(255)
 );
 
 CREATE TABLE transactions (

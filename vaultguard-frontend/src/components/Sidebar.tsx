@@ -1,5 +1,7 @@
 import { LayoutDashboard, TrendingUp, BarChart3, LogOut, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 interface SidebarProps {
   activeTab: string;
@@ -13,6 +15,13 @@ const navItems = [
 ];
 
 const Sidebar = ({ activeTab, onTabChange }: SidebarProps) => {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
   return (
     <aside className="fixed left-0 top-0 h-full w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
       {/* Logo */}

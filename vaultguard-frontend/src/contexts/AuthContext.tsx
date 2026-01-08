@@ -41,16 +41,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
+    console.log('Checking token on mount:', !!token);
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      console.log('Fetching profile');
       // Verify token by fetching profile
       axios.get('/auth/profile')
         .then(response => {
+          console.log('Profile fetched:', response.data);
           setUser(response.data);
         })
-        .catch(() => {
-          localStorage.removeItem('token');
-          delete axios.defaults.headers.common['Authorization'];
+        .catch((error) => {
+          console.log('Profile fetch failed:', error);
+          // Don't clear user, keep from login
+          // localStorage.removeItem('token');
+          // delete axios.defaults.headers.common['Authorization'];
         })
         .finally(() => setLoading(false));
     } else {
@@ -60,6 +65,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (email: string, password: string) => {
     const response = await axios.post('/auth/login', { email, password });
+    console.log('Login response:', response.data);
     const { token, user: userData } = response.data;
     localStorage.setItem('token', token);
     axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
@@ -67,7 +73,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const signup = async (email: string, password: string, account_number: string, ifsc_code: string) => {
-    await axios.post('/auth/signup', { email, password, account_number, ifsc_code });
+    const response = await axios.post('/auth/signup', { email, password, account_number, ifsc_code });
+    console.log('Signup response:', response.data);
     // After signup, login
     await login(email, password);
   };

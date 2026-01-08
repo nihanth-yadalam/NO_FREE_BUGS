@@ -1,8 +1,14 @@
 const express = require('express');
 const { Pool } = require('pg');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
 
 const app = express();
+app.use(cors());
 app.use(express.json());
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 // Connection using Environment Variables for Docker compatibility
 const pool = new Pool({
@@ -13,15 +19,70 @@ const pool = new Pool({
     port: 5432,
 });
 
+// Middleware to verify JWT
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Access token required' });
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ error: 'Invalid token' });
+        req.user = user;
+        next();
+    });
+};
+
 // 1. Health Check
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'UP', message: 'Bank API is operational' });
 });
 
+// Auth endpoints
+app.post('/auth/signup', async (req, res) => {
+    const { email, password, account_number, ifsc_code } = req.body;
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await pool.query(
+            'INSERT INTO accounts (account_number, ifsc_code, email, password_hash) VALUES ($1, $2, $3, $4)',
+            [account_number, ifsc_code, email, hashedPassword]
+        );
+        res.status(201).json({ message: 'User registered successfully' });
+    } catch (err) {
+        res.status(400).json({ error: 'User already exists or database error' });
+    }
+});
+
+app.post('/auth/login', async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        const result = await pool.query('SELECT * FROM accounts WHERE email = $1', [email]);
+        if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
+
+        const user = result.rows[0];
+        const isValid = await bcrypt.compare(password, user.password_hash);
+        if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
+
+        const token = jwt.sign({ id: user.id, email: user.email, account_number: user.account_number }, JWT_SECRET);
+        res.json({ token, user: { id: user.id, email: user.email, account_number: user.account_number, ifsc_code: user.ifsc_code, balance: user.balance } });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/auth/profile', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT id, email, account_number, ifsc_code, balance FROM accounts WHERE id = $1', [req.user.id]);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // 2. Get All Users (New Endpoint)
 app.get('/getallusers', async (req, res) => {
     try {
-        const result = await pool.query('SELECT account_number, ifsc_code, balance FROM accounts ORDER BY id ASC');
+        const result = await pool.query('SELECT account_number, ifsc_code, balance, email FROM accounts ORDER BY id ASC');
         res.json({ count: result.rowCount, users: result.rows });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -33,7 +94,7 @@ app.get('/getuser/:acc/:ifsc', async (req, res) => {
     const { acc, ifsc } = req.params;
     try {
         const result = await pool.query(
-            'SELECT account_number, ifsc_code, balance FROM accounts WHERE account_number = $1 AND ifsc_code = $2',
+            'SELECT account_number, ifsc_code, balance, email FROM accounts WHERE account_number = $1 AND ifsc_code = $2',
             [acc, ifsc]
         );
         if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -75,11 +136,12 @@ app.get('/gettransaction/:acc/:ifsc/:filter', async (req, res) => {
 // 5. Add User
 app.post('/adduser/:acc/:ifsc', async (req, res) => {
     const { acc, ifsc } = req.params;
-    const { initial_balance } = req.body;
+    const { initial_balance, email, password } = req.body;
     try {
+        const hashedPassword = password ? await bcrypt.hash(password, 10) : null;
         await pool.query(
-            'INSERT INTO accounts (account_number, ifsc_code, balance) VALUES ($1, $2, $3)',
-                         [acc, ifsc, initial_balance || 0]
+            'INSERT INTO accounts (account_number, ifsc_code, balance, email, password_hash) VALUES ($1, $2, $3, $4, $5)',
+                         [acc, ifsc, initial_balance || 0, email, hashedPassword]
         );
         res.status(201).json({ message: 'User created successfully' });
     } catch (err) {

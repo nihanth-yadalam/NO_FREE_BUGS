@@ -26,10 +26,11 @@ const Login = () => {
         description: 'Welcome back!',
       });
       navigate('/');
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Login error:', error);
       toast({
         title: 'Login failed',
-        description: 'Invalid credentials',
+        description: error.response?.data?.error || 'Invalid credentials',
         variant: 'destructive',
       });
     } finally {

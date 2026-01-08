@@ -42,7 +42,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - VITE_API_BASE_URL=http://localhost:8080
+      - VITE_API_BASE_URL=http://bank-api:3100
       - CHOKIDAR_USEPOLLING=true # Essential for hot reload on some systems
     volumes:
       - ./vaultguard-frontend:/app

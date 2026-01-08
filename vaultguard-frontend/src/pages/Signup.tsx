@@ -28,10 +28,11 @@ const Signup = () => {
         description: 'Account created successfully!',
       });
       navigate('/');
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Signup error:', error);
       toast({
         title: 'Signup failed',
-        description: 'Account already exists or invalid data',
+        description: error.response?.data?.error || 'An error occurred during signup',
         variant: 'destructive',
       });
     } finally {
