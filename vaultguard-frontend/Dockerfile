@@ -1,4 +1,3 @@
-# Use Node for building and serving in dev mode
 FROM node:18-alpine
 
 WORKDIR /app
@@ -10,8 +9,8 @@ RUN npm install
 # Copy source
 COPY . .
 
-# Vite dev port
+# Vite default port
 EXPOSE 5173
 
-# Run vite with host flag to allow Docker mapping
-CMD ["npm", "run", "dev"]
+# Essential: --host allows the container to expose the port to your laptop
+CMD ["npm", "run", "dev", "--", "--host"]
