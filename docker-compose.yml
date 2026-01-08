@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  # The Simulated Bank
+  bank-api:
+    build: ./bank-api
+    container_name: bank-service
+    ports:
+      - "3100:3100"
+    networks:
+      - vaultguard-net
+
+  # The VaultGuard "Brain"
+  vaultguard-backend:
+    build: ./vaultguard-backend
+    container_name: vaultguard-service
+    environment:
+      - BANK_API_URL=http://bank-service:3000
+      - PORT=8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      - bank-api
+    networks:
+      - vaultguard-net
+
+networks:
+  vaultguard-net:
+    driver: bridge
