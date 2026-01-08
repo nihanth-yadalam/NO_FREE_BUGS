@@ -20,12 +20,12 @@ const UserProfileDropdown = () => {
   console.log('User in dropdown:', user);
 
   const userDetails: UserDetails = {
-    name: user?.email.split('@')[0] || 'User', // Simple name from email
-    email: user?.email || '',
-    bankName: "HDFC Bank", // Assuming
-    accountNumber: user?.account_number || '',
-    ifscCode: user?.ifsc_code || '',
-    balance: user?.balance || 0,
+    name: user?.email ? user.email.split('@')[0].charAt(0).toUpperCase() + user.email.split('@')[0].slice(1) : 'Karthik',
+    email: user?.email || 'karthik@gmail.com',
+    bankName: "HDFC Bank",
+    accountNumber: user?.account_number?.trim() || '1234567890',
+    ifscCode: user?.ifsc_code || 'TEST0001',
+    balance: user?.balance ?? 0.00,
   };
 
   const handleCopy = (text: string, field: string) => {
@@ -95,7 +95,7 @@ const UserProfileDropdown = () => {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.15 }}
                   >
-                    {user.name}
+                    {userDetails.name}
                   </motion.h3>
                   <motion.p
                     className="text-sm text-muted-foreground"
@@ -103,7 +103,7 @@ const UserProfileDropdown = () => {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.2 }}
                   >
-                    {user.email}
+                    {userDetails.email}
                   </motion.p>
                 </div>
               </div>
@@ -120,7 +120,7 @@ const UserProfileDropdown = () => {
                   <span>Available Balance</span>
                 </div>
                 <p className="text-2xl font-display font-bold text-gradient">
-                  ₹{user.balance.toLocaleString()}
+                  ₹{userDetails.balance.toLocaleString()}
                 </p>
               </motion.div>
 
@@ -140,7 +140,7 @@ const UserProfileDropdown = () => {
                   <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
                     <div>
                       <p className="text-xs text-muted-foreground">Bank Name</p>
-                      <p className="font-medium">{user.bankName}</p>
+                      <p className="font-medium">{userDetails.bankName}</p>
                     </div>
                     <CreditCard className="w-5 h-5 text-primary" />
                   </div>
@@ -148,10 +148,10 @@ const UserProfileDropdown = () => {
                   <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
                     <div>
                       <p className="text-xs text-muted-foreground">Account Number</p>
-                      <p className="font-medium font-mono">{user.accountNumber}</p>
+                      <p className="font-medium font-mono">{userDetails.accountNumber}</p>
                     </div>
                     <button
-                      onClick={() => handleCopy(user.accountNumber, "account")}
+                      onClick={() => handleCopy(userDetails.accountNumber, "account")}
                       className="p-1.5 rounded-md hover:bg-secondary transition-colors"
                     >
                       {copied === "account" ? (
@@ -165,10 +165,10 @@ const UserProfileDropdown = () => {
                   <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
                     <div>
                       <p className="text-xs text-muted-foreground">IFSC Code</p>
-                      <p className="font-medium font-mono">{user.ifscCode}</p>
+                      <p className="font-medium font-mono">{userDetails.ifscCode}</p>
                     </div>
                     <button
-                      onClick={() => handleCopy(user.ifscCode, "ifsc")}
+                      onClick={() => handleCopy(userDetails.ifscCode, "ifsc")}
                       className="p-1.5 rounded-md hover:bg-secondary transition-colors"
                     >
                       {copied === "ifsc" ? (
