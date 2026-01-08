@@ -57,19 +57,19 @@ services:
   vaultguard-frontend:
     build: ./frontend
     container_name: vaultguard-frontend
+    working_dir: /app
     ports:
-      - "3000:3000"
+      - "5173:5173"
     environment:
       - VITE_API_BASE_URL=http://localhost:8080
-      # --- ADD THESE LINES ---
+      - CHOKIDAR_USEPOLLING=true
     volumes:
-      - ./frontend:/app           # Syncs local code to container
-      - /app/node_modules        # Prevents local node_modules from overwriting container's
-    # -----------------------
-#    depends_on:
-#      - vaultguard-backend
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev
     networks:
       - vaultguard-net
+
 
 # -----------------------------
 # Networks
