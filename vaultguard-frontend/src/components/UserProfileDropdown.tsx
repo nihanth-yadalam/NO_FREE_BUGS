@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, ChevronDown, Wallet, CreditCard, Building, Copy, Check, X } from "lucide-react";
+import { User, ChevronDown, Wallet, CreditCard, Building, Copy, Check, X, LogOut } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface UserDetails {
   name: string;
@@ -14,10 +16,12 @@ interface UserDetails {
 const UserProfileDropdown = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const { user: authUser, logout } = useAuth();
+  const navigate = useNavigate();
 
   const user: UserDetails = {
-    name: "Rahul Sharma",
-    email: "rahul.sharma@email.com",
+    name: authUser?.name || "Rahul Sharma",
+    email: authUser?.email || "rahul.sharma@email.com",
     bankName: "HDFC Bank",
     accountNumber: "XXXX XXXX 4532",
     ifscCode: "HDFC0001234",
@@ -28,6 +32,11 @@ const UserProfileDropdown = () => {
     navigator.clipboard.writeText(text);
     setCopied(field);
     setTimeout(() => setCopied(null), 2000);
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
   };
 
   return (
@@ -175,6 +184,22 @@ const UserProfileDropdown = () => {
                     </button>
                   </div>
                 </div>
+              </motion.div>
+
+              {/* Logout button */}
+              <motion.div
+                className="mt-4 pt-4 border-t border-glass-border"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.35 }}
+              >
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center justify-center gap-2 p-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span className="font-medium">Sign Out</span>
+                </button>
               </motion.div>
             </motion.div>
           </>

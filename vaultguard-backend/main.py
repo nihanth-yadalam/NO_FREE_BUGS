@@ -2,7 +2,7 @@
 VaultGuard Backend API
 Main FastAPI application for the VaultGuard financial management platform
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict
@@ -14,10 +14,23 @@ from config import (
     DEFAULT_IFSC_CODE,
     USER_NAME,
     USER_EMAIL,
-    BANK_NAME
+    BANK_NAME,
+    ACCESS_TOKEN_EXPIRE_MINUTES
 )
 from bank_service import BankAPIService, setup_demo_user
 from ml_models import VaultGuardPredictor
+from auth import (
+    Token,
+    UserLogin,
+    UserRegister,
+    User,
+    authenticate_user,
+    create_access_token,
+    get_current_active_user,
+    get_user,
+    add_user,
+    hash_password
+)
 
 app = FastAPI(
     title="VaultGuard API",
@@ -91,6 +104,67 @@ class ChartData(BaseModel):
 # In-memory storage for expenses (in production, use a database)
 expenses_db: Dict[str, Expense] = {}
 budget_settings = BudgetSettings(monthly_budget=50000, fixed_bills=12000)
+
+
+# ==================== Authentication Endpoints ====================
+@app.post("/api/auth/login", response_model=Token)
+async def login(user_login: UserLogin):
+    """Authenticate user and return JWT token"""
+    user = authenticate_user(user_login.email, user_login.password)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.email}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.get("/api/auth/me", response_model=User)
+async def get_current_user_info(current_user: User = Depends(get_current_active_user)):
+    """Get current authenticated user info"""
+    return current_user
+
+
+@app.post("/api/auth/register", response_model=Token)
+async def register(user_register: UserRegister):
+    """Register a new user and return JWT token"""
+    # Check if user already exists
+    existing_user = get_user(user_register.email)
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered"
+        )
+    
+    # Validate password length
+    if len(user_register.password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 6 characters long"
+        )
+    
+    # Create new user
+    try:
+        hashed_password = hash_password(user_register.password)
+        add_user(
+            email=user_register.email,
+            name=user_register.name,
+            hashed_password=hashed_password
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    # Generate token for the new user
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user_register.email}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 # ==================== Health Check ====================

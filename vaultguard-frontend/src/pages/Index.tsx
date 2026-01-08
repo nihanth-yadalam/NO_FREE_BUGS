@@ -11,6 +11,7 @@ import { getExpenses, getBudget, addExpense, deleteExpense, setupDemoUser, type 
 import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -20,6 +21,7 @@ const Index = () => {
   const [settingUp, setSettingUp] = useState(false);
   const [budgetData, setBudgetData] = useState<BudgetData | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   // Fetch data from backend
   const fetchData = async () => {
@@ -147,7 +149,7 @@ const Index = () => {
               animate={{ opacity: 1, y: 0 }}
             >
               <p className="text-muted-foreground text-sm">Welcome back,</p>
-              <h2 className="text-2xl font-display font-bold">Rahul Sharma</h2>
+              <h2 className="text-2xl font-display font-bold">{user?.name || "User"}</h2>
             </motion.div>
             <div className="flex items-center gap-4">
               <Button

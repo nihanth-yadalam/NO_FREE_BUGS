@@ -5,6 +5,18 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
+// Helper to get auth headers
+function getAuthHeaders(): HeadersInit {
+  const token = localStorage.getItem('vaultguard_token');
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 // Types
 export interface UserProfile {
   name: string;
@@ -111,7 +123,9 @@ export interface WeeklySpendingData {
  * Fetch user profile including bank balance
  */
 export async function getUserProfile(): Promise<UserProfile> {
-  const response = await fetch(`${API_BASE_URL}/api/user/profile`);
+  const response = await fetch(`${API_BASE_URL}/api/user/profile`, {
+    headers: getAuthHeaders(),
+  });
   if (!response.ok) {
     throw new Error('Failed to fetch user profile');
   }
@@ -124,6 +138,7 @@ export async function getUserProfile(): Promise<UserProfile> {
 export async function setupDemoUser(): Promise<{ message: string; final_balance: number }> {
   const response = await fetch(`${API_BASE_URL}/api/user/setup`, {
     method: 'POST',
+    headers: getAuthHeaders(),
   });
   if (!response.ok) {
     throw new Error('Failed to setup demo user');
@@ -135,7 +150,9 @@ export async function setupDemoUser(): Promise<{ message: string; final_balance:
  * Fetch all expenses
  */
 export async function getExpenses(): Promise<Expense[]> {
-  const response = await fetch(`${API_BASE_URL}/api/expenses`);
+  const response = await fetch(`${API_BASE_URL}/api/expenses`, {
+    headers: getAuthHeaders(),
+  });
   if (!response.ok) {
     throw new Error('Failed to fetch expenses');
   }
@@ -148,9 +165,7 @@ export async function getExpenses(): Promise<Expense[]> {
 export async function addExpense(expense: ExpenseCreate): Promise<Expense> {
   const response = await fetch(`${API_BASE_URL}/api/expenses`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify(expense),
   });
   if (!response.ok) {
@@ -165,6 +180,7 @@ export async function addExpense(expense: ExpenseCreate): Promise<Expense> {
 export async function deleteExpense(expenseId: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/expenses/${expenseId}`, {
     method: 'DELETE',
+    headers: getAuthHeaders(),
   });
   if (!response.ok) {
     throw new Error('Failed to delete expense');
@@ -175,7 +191,9 @@ export async function deleteExpense(expenseId: string): Promise<void> {
  * Fetch budget data
  */
 export async function getBudget(): Promise<BudgetData> {
-  const response = await fetch(`${API_BASE_URL}/api/budget`);
+  const response = await fetch(`${API_BASE_URL}/api/budget`, {
+    headers: getAuthHeaders(),
+  });
   if (!response.ok) {
     throw new Error('Failed to fetch budget');
   }
@@ -191,9 +209,7 @@ export async function updateBudget(settings: {
 }): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/budget`, {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify(settings),
   });
   if (!response.ok) {
@@ -205,7 +221,9 @@ export async function updateBudget(settings: {
  * Fetch ML predictions
  */
 export async function getPredictions(): Promise<PredictionData> {
-  const response = await fetch(`${API_BASE_URL}/api/predictions`);
+  const response = await fetch(`${API_BASE_URL}/api/predictions`, {
+    headers: getAuthHeaders(),
+  });
   if (!response.ok) {
     throw new Error('Failed to fetch predictions');
   }
@@ -216,7 +234,9 @@ export async function getPredictions(): Promise<PredictionData> {
  * Fetch chart data for predictions
  */
 export async function getChartData(): Promise<ChartDataPoint[]> {
-  const response = await fetch(`${API_BASE_URL}/api/predictions/chart-data`);
+  const response = await fetch(`${API_BASE_URL}/api/predictions/chart-data`, {
+    headers: getAuthHeaders(),
+  });
   if (!response.ok) {
     throw new Error('Failed to fetch chart data');
   }
@@ -228,7 +248,9 @@ export async function getChartData(): Promise<ChartDataPoint[]> {
  * Fetch category summary
  */
 export async function getCategorySummary(): Promise<CategorySummary> {
-  const response = await fetch(`${API_BASE_URL}/api/analytics/category-summary`);
+  const response = await fetch(`${API_BASE_URL}/api/analytics/category-summary`, {
+    headers: getAuthHeaders(),
+  });
   if (!response.ok) {
     throw new Error('Failed to fetch category summary');
   }
@@ -239,7 +261,9 @@ export async function getCategorySummary(): Promise<CategorySummary> {
  * Fetch weekly spending data
  */
 export async function getWeeklySpending(): Promise<WeeklySpendingData[]> {
-  const response = await fetch(`${API_BASE_URL}/api/analytics/weekly-spending`);
+  const response = await fetch(`${API_BASE_URL}/api/analytics/weekly-spending`, {
+    headers: getAuthHeaders(),
+  });
   if (!response.ok) {
     throw new Error('Failed to fetch weekly spending');
   }
