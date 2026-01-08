@@ -71,3 +71,10 @@ VaultGuard acts as a **financial command center**, providing:
 - Combines **data visualization + AI insights** for better decision-making  
 - Designed with **security, scalability, and usability** in mind  
 - Emphasizes **financial awareness and discipline**, not just record-keeping  
+
+
+## Steps to run
+- Clone the repo
+- run `docker compose up --build` (run with sudo if required on linux)
+- visit `localhost:5173`
+- login (a sample user account has been setup already)
