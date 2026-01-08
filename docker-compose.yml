@@ -1,7 +1,9 @@
 version: '3.8'
 
 services:
-  # The Local Database
+  # -----------------------------
+  # The Local Bank Database
+  # -----------------------------
   bank-db:
     image: postgres:15
     container_name: bank-db
@@ -14,7 +16,9 @@ services:
     volumes:
       - ./bank-api/init/setup.sql:/docker-entrypoint-initdb.d/setup.sql
 
+  # -----------------------------
   # The Simulated Bank
+  # -----------------------------
   bank-api:
     build: ./bank-api
     container_name: bank-service
@@ -31,39 +35,45 @@ services:
       - vaultguard-net
       - bank-internal
 
-  # The VaultGuard "Brain"
-  vaultguard-backend:
-    build: ./vaultguard-backend
-    container_name: vaultguard-service
-    environment:
-      - BANK_API_URL=http://bank-service:3100
-      - PORT=8080
-    ports:
-      - "8080:8080"
-    depends_on:
-      - bank-api
-    networks:
-      - vaultguard-net
+  # -----------------------------
+  # VaultGuard Backend
+  # -----------------------------
+  #vaultguard-backend:
+  #  build: ./vaultguard-backend
+  #  container_name: vaultguard-service
+  #  environment:
+  #    - BANK_API_URL=http://bank-service:3100
+  #    - PORT=8080
+  #  ports:
+  #    - "8080:8080"
+  #  depends_on:
+  #    - bank-api
+  #  networks:
+  #    - vaultguard-net
 
-  # The VaultGuard Frontend (React + Vite)
+  # -----------------------------
+  # VaultGuard Frontend (NEW)
+  # -----------------------------
   vaultguard-frontend:
-    build: ./vaultguard-frontend
-    container_name: vaultguard-ui
+    build: ./frontend
+    container_name: vaultguard-frontend
     ports:
-      - "5173:5173"
+      - "3000:3000"
     environment:
-      - VITE_API_URL=http://localhost:8080
-    volumes:
-      - ./vaultguard-frontend:/app
-      - /app/node_modules # Prevents local node_modules from overwriting container's
-    # depends_on:
-    #   - vaultguard-backend
+      - VITE_API_BASE_URL=http://localhost:8080
+#    depends_on:
+#      - vaultguard-backend
     networks:
       - vaultguard-net
 
+# -----------------------------
+# Networks
+# -----------------------------
 networks:
   vaultguard-net:
     driver: bridge
+
   bank-internal:
     driver: bridge
+    internal: true
     internal: true
