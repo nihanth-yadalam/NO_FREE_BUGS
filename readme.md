@@ -31,6 +31,17 @@ VaultGuard acts as a **financial command center**, providing:
 <img width="2816" height="1536" alt="VaultGuard Architecture Diagram" src="https://github.com/user-attachments/assets/eff64c45-8f4f-4596-a9ad-bffb9cb43ef5" />
 
 
+## ⚠️ Security Scope & Simulation Notice (Read Before Testing)
+
+**Important:** The `bank-api` service included in this repository is a **Mock Data Generator** built solely to simulate a banking environment for the Build2Break hackathon.
+
+* **Status:** `bank-api` is **OUT OF SCOPE** for security testing.
+* **Reasoning:** It contains intentional simplifications (such as open endpoints) to facilitate data seeding for our ML models. In a real-world production deployment, this entire service would be replaced by a secure 3rd-party integration (e.g., Plaid, Yodlee, or a generic Open Banking API).
+* **Targeting:** Please direct all architectural and security challenges to the **`vaultguard-backend`** (Risk Engine) and **`vaultguard-frontend`** (User Dashboard).
+
+**Issues raised against `bank-api` (e.g., missing auth on data seeders) will be marked as Invalid/Out-of-Scope.**
+
+
 ## Key Features
 
 ### 1. Centralized Dashboard
