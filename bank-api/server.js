@@ -87,19 +87,13 @@ app.post('/adduser/:acc/:ifsc', async (req, res) => {
     }
 });
 
-// 6. Delete User (and their transactions)
+// 6. Delete User
 app.delete('/deleteuser/:acc/:ifsc', async (req, res) => {
     const { acc, ifsc } = req.params;
     try {
-        // Delete all transactions for this account first
-        await pool.query(
-            'DELETE FROM transactions WHERE sender_account = $1 OR receiver_account = $1',
-            [acc]
-        );
-        // Then delete the account
         const result = await pool.query('DELETE FROM accounts WHERE account_number = $1 AND ifsc_code = $2', [acc, ifsc]);
         if (result.rowCount === 0) return res.status(404).json({ error: 'User not found' });
-        res.json({ message: 'User and transactions deleted' });
+        res.json({ message: 'User deleted' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

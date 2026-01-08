@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getWeeklySpending, type WeeklyData } from "@/lib/api";
+import { getWeeklySpending, type WeeklySpendingData } from "@/lib/api";
 
 interface Expense {
   id: string;
@@ -53,7 +53,7 @@ const AnalyticsTransactions = ({ expenses, onDelete }: AnalyticsTransactionsProp
   const [filter, setFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [weeklyData, setWeeklyData] = useState<WeeklyData[]>([]);
+  const [weeklyData, setWeeklyData] = useState<WeeklySpendingData[]>([]);
   const [loadingWeekly, setLoadingWeekly] = useState(true);
 
   // Fetch weekly spending data from backend
@@ -62,10 +62,10 @@ const AnalyticsTransactions = ({ expenses, onDelete }: AnalyticsTransactionsProp
       try {
         setLoadingWeekly(true);
         const data = await getWeeklySpending();
-        setWeeklyData(data.weekly || []);
-      } catch (err) {
-        console.error("Failed to fetch weekly data:", err);
-        // Fall back to generated data
+        setWeeklyData(data);
+      } catch (error) {
+        console.error("Failed to fetch weekly spending:", error);
+        // Fallback to generated data
         const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
         setWeeklyData(days.map((day) => ({
           day,
@@ -79,7 +79,7 @@ const AnalyticsTransactions = ({ expenses, onDelete }: AnalyticsTransactionsProp
     };
     
     fetchWeeklyData();
-  }, []);
+  }, [expenses]);
 
   // Calculate category totals for pie chart
   const categoryData = useMemo(() => {

@@ -1,6 +1,6 @@
 /**
  * VaultGuard API Service
- * Handles all communication with the vaultguard-backend
+ * Handles all API calls to the VaultGuard backend
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
@@ -19,200 +19,241 @@ export interface Expense {
   id: string;
   name: string;
   amount: number;
-  category: 'regular' | 'irregular' | 'daily';
+  category: "regular" | "irregular" | "daily";
   date: string;
-  transaction_id?: string;
 }
 
-export interface DashboardData {
-  user: UserProfile;
-  budget: number;
-  totalSpent: number;
-  expenses: Expense[];
-  categorySummary: {
+export interface ExpenseCreate {
+  name: string;
+  amount: number;
+  category: "regular" | "irregular" | "daily";
+  date: string;
+}
+
+export interface BudgetData {
+  monthly_budget: number;
+  total_spent: number;
+  remaining: number;
+  percentage_used: number;
+  category_totals: {
     regular: number;
     irregular: number;
     daily: number;
   };
+  current_balance: number;
+  fixed_bills: number;
 }
 
 export interface PredictionData {
+  predicted_income: number;
+  predicted_expense: number;
+  predicted_savings: number;
+  can_spend: number;
+  confidence: number;
   current_balance: number;
-  income_prediction: {
+  days_left: number;
+  income_details: {
     predicted_income: number;
-    raw_prediction: number;
-    ml_prediction: number;
-    statistical_prediction: number;
     daily_average: number;
     confidence: number;
     method: string;
-    safety_factor: number;
     days_history: number;
-    volatility: number;
   };
-  expense_prediction: {
-    predicted_expenses: number;
+  expense_details: {
+    predicted_expense: number;
     daily_run_rate: number;
     confidence: number;
     method: string;
-    days_analyzed: number;
-    safety_buffer: number;
   };
-  fixed_bills: number;
-  total_liquidity: number;
-  total_obligations: number;
-  safe_to_spend: number;
-  is_safe: boolean;
-  deficit: number;
-  overall_confidence: number;
-  days_forecast: number;
-  analysis: {
-    income_transactions_count: number;
-    expense_transactions_count: number;
-    total_transactions: number;
+  summary: {
+    current_balance: number;
+    predicted_income: number;
+    predicted_expense: number;
+    fixed_bills_due: number;
+    total_liquidity: number;
+    total_obligations: number;
+    safe_to_spend: number;
+    days_left: number;
+    overall_confidence: number;
+    is_safe: boolean;
   };
 }
 
-export interface HistoricalMonth {
+export interface ChartDataPoint {
   month: string;
-  month_label: string;
   income: number;
   expense: number;
   balance: number;
+  isPredicted?: boolean;
 }
 
-export interface WeeklyData {
+export interface CategorySummary {
+  categories: {
+    name: string;
+    id: string;
+    total: number;
+    count: number;
+    description: string;
+  }[];
+  total: number;
+}
+
+export interface WeeklySpendingData {
   day: string;
   regular: number;
   irregular: number;
   daily: number;
 }
 
-export interface CategoryBreakdown {
-  totals: {
-    regular: number;
-    irregular: number;
-    daily: number;
-  };
-  counts: {
-    regular: number;
-    irregular: number;
-    daily: number;
-  };
-  total_spent: number;
-}
-
 // API Functions
-async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-  });
 
+/**
+ * Fetch user profile including bank balance
+ */
+export async function getUserProfile(): Promise<UserProfile> {
+  const response = await fetch(`${API_BASE_URL}/api/user/profile`);
   if (!response.ok) {
-    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+    throw new Error('Failed to fetch user profile');
   }
-
   return response.json();
 }
 
-// Health check
-export async function checkHealth(): Promise<{ status: string; message: string }> {
-  return fetchAPI('/health');
-}
-
-// User endpoints
-export async function getUserProfile(): Promise<UserProfile> {
-  return fetchAPI('/api/user');
-}
-
-export async function getBalance(): Promise<{ balance: number }> {
-  return fetchAPI('/api/balance');
-}
-
-// Dashboard
-export async function getDashboardData(): Promise<DashboardData> {
-  return fetchAPI('/api/dashboard');
-}
-
-// Expenses
-export async function getExpenses(): Promise<Expense[]> {
-  return fetchAPI('/api/expenses');
-}
-
-export async function addExpense(expense: {
-  name: string;
-  amount: number;
-  category: string;
-  date?: string;
-}): Promise<{ message: string; amount: number }> {
-  return fetchAPI('/api/expenses', {
+/**
+ * Setup demo user with transactions
+ */
+export async function setupDemoUser(): Promise<{ message: string; final_balance: number }> {
+  const response = await fetch(`${API_BASE_URL}/api/user/setup`, {
     method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to setup demo user');
+  }
+  return response.json();
+}
+
+/**
+ * Fetch all expenses
+ */
+export async function getExpenses(): Promise<Expense[]> {
+  const response = await fetch(`${API_BASE_URL}/api/expenses`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch expenses');
+  }
+  return response.json();
+}
+
+/**
+ * Add a new expense
+ */
+export async function addExpense(expense: ExpenseCreate): Promise<Expense> {
+  const response = await fetch(`${API_BASE_URL}/api/expenses`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify(expense),
   });
+  if (!response.ok) {
+    throw new Error('Failed to add expense');
+  }
+  return response.json();
 }
 
-// Predictions
-export async function getPredictions(
-  daysLeft: number = 15,
-  fixedBills: number = 0
-): Promise<PredictionData> {
-  return fetchAPI(`/api/predictions?days_left=${daysLeft}&fixed_bills=${fixedBills}`);
+/**
+ * Delete an expense
+ */
+export async function deleteExpense(expenseId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/expenses/${expenseId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to delete expense');
+  }
 }
 
-// Analytics
-export async function getHistoricalData(months: number = 6): Promise<{ history: HistoricalMonth[] }> {
-  return fetchAPI(`/api/analytics/history?months=${months}`);
+/**
+ * Fetch budget data
+ */
+export async function getBudget(): Promise<BudgetData> {
+  const response = await fetch(`${API_BASE_URL}/api/budget`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch budget');
+  }
+  return response.json();
 }
 
-export async function getCategoryBreakdown(): Promise<CategoryBreakdown> {
-  return fetchAPI('/api/analytics/category-breakdown');
+/**
+ * Update budget settings
+ */
+export async function updateBudget(settings: {
+  monthly_budget: number;
+  fixed_bills: number;
+}): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/budget`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(settings),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update budget');
+  }
 }
 
-export async function getWeeklySpending(): Promise<{ weekly: WeeklyData[] }> {
-  return fetchAPI('/api/analytics/weekly');
+/**
+ * Fetch ML predictions
+ */
+export async function getPredictions(): Promise<PredictionData> {
+  const response = await fetch(`${API_BASE_URL}/api/predictions`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch predictions');
+  }
+  return response.json();
 }
 
-// Setup endpoints (for initial data seeding)
-export async function setupFullSetup(): Promise<{ message: string; details: any }> {
-  return fetchAPI('/api/setup/full-setup', { method: 'POST' });
+/**
+ * Fetch chart data for predictions
+ */
+export async function getChartData(): Promise<ChartDataPoint[]> {
+  const response = await fetch(`${API_BASE_URL}/api/predictions/chart-data`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch chart data');
+  }
+  const data = await response.json();
+  return data.data;
 }
 
-export async function setupCreateUser(): Promise<{ message: string; user?: any }> {
-  return fetchAPI('/api/setup/create-user', { method: 'POST' });
+/**
+ * Fetch category summary
+ */
+export async function getCategorySummary(): Promise<CategorySummary> {
+  const response = await fetch(`${API_BASE_URL}/api/analytics/category-summary`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch category summary');
+  }
+  return response.json();
 }
 
-export async function setupSeedTransactions(
-  numTransactions: number = 200,
-  targetBalance: number = 1000
-): Promise<any> {
-  return fetchAPI(
-    `/api/setup/seed-transactions?num_transactions=${numTransactions}&target_balance=${targetBalance}`,
-    { method: 'POST' }
-  );
+/**
+ * Fetch weekly spending data
+ */
+export async function getWeeklySpending(): Promise<WeeklySpendingData[]> {
+  const response = await fetch(`${API_BASE_URL}/api/analytics/weekly-spending`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch weekly spending');
+  }
+  const data = await response.json();
+  return data.data;
 }
 
-// Transactions
-export async function getTransactions(): Promise<{ transactions: any[]; count: number }> {
-  return fetchAPI('/api/transactions');
+/**
+ * Health check
+ */
+export async function healthCheck(): Promise<{ status: string; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/health`);
+  if (!response.ok) {
+    throw new Error('API is not healthy');
+  }
+  return response.json();
 }
-
-export default {
-  checkHealth,
-  getUserProfile,
-  getBalance,
-  getDashboardData,
-  getExpenses,
-  addExpense,
-  getPredictions,
-  getHistoricalData,
-  getCategoryBreakdown,
-  getWeeklySpending,
-  setupFullSetup,
-  setupCreateUser,
-  setupSeedTransactions,
-  getTransactions,
-};

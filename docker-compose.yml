@@ -34,17 +34,18 @@ services:
       - bank-internal
 
   # -----------------------------
-  # VaultGuard Backend (Python/FastAPI)
+  # VaultGuard Backend (FastAPI)
   # -----------------------------
   vaultguard-backend:
     build: ./vaultguard-backend
     container_name: vaultguard-backend
     environment:
-      - BANK_API_URL=http://bank-service:3100
-      - USER_ACCOUNT=VG12345678
-      - USER_IFSC=VAULT0001
+      - BANK_API_URL=http://bank-api:3100
+      - DEFAULT_ACCOUNT_NUMBER=1234567890
+      - DEFAULT_IFSC_CODE=VAULT001
       - USER_NAME=Rahul Sharma
       - USER_EMAIL=rahul.sharma@email.com
+      - BANK_NAME=VaultGuard Bank
     ports:
       - "8080:8080"
     depends_on:

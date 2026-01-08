@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
-import { TrendingUp, TrendingDown, Sparkles, ArrowUpRight, ArrowDownRight, Brain, Loader2, AlertCircle } from "lucide-react";
+import { TrendingUp, TrendingDown, Sparkles, ArrowUpRight, ArrowDownRight, Brain, Loader2 } from "lucide-react";
 import {
   AreaChart,
   Area,
@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import { getPredictions, getHistoricalData, type PredictionData, type HistoricalMonth } from "@/lib/api";
+import { getPredictions, getChartData, type PredictionData, type ChartDataPoint } from "@/lib/api";
 
 interface Expense {
   id: string;
@@ -28,10 +28,8 @@ interface PredictionTabProps {
 
 const PredictionTab = ({ expenses, budget }: PredictionTabProps) => {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [predictionData, setPredictionData] = useState<PredictionData | null>(null);
-  const [historicalData, setHistoricalData] = useState<HistoricalMonth[]>([]);
-  
+  const [predictions, setPredictions] = useState<PredictionData | null>(null);
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [animatedValues, setAnimatedValues] = useState({
     income: 0,
     expense: 0,
@@ -39,45 +37,34 @@ const PredictionTab = ({ expenses, budget }: PredictionTabProps) => {
     canSpend: 0,
   });
 
-  // Fetch prediction data from backend
+  // Fetch predictions from backend
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchPredictions = async () => {
       try {
         setLoading(true);
-        setError(null);
-        
-        const [predictions, history] = await Promise.all([
-          getPredictions(15, 0),
-          getHistoricalData(6)
+        const [predData, chart] = await Promise.all([
+          getPredictions(),
+          getChartData()
         ]);
-        
-        setPredictionData(predictions);
-        setHistoricalData(history.history || []);
-      } catch (err) {
-        console.error("Failed to fetch predictions:", err);
-        setError("Failed to load predictions. Please try again.");
+        setPredictions(predData);
+        setChartData(chart);
+      } catch (error) {
+        console.error("Failed to fetch predictions:", error);
       } finally {
         setLoading(false);
       }
     };
     
-    fetchData();
-  }, []);
+    fetchPredictions();
+  }, [expenses]);
 
-  // Animate values when prediction data changes
+  // Animate values when predictions load
   useEffect(() => {
-    if (!predictionData) return;
+    if (!predictions) return;
     
     const duration = 1500;
     const steps = 60;
     const interval = duration / steps;
-
-    const targetValues = {
-      income: predictionData.income_prediction?.predicted_income || 0,
-      expense: predictionData.expense_prediction?.predicted_expenses || 0,
-      savings: (predictionData.income_prediction?.predicted_income || 0) - (predictionData.expense_prediction?.predicted_expenses || 0),
-      canSpend: predictionData.safe_to_spend || 0,
-    };
 
     let step = 0;
     const timer = setInterval(() => {
@@ -86,56 +73,17 @@ const PredictionTab = ({ expenses, budget }: PredictionTabProps) => {
       const eased = 1 - Math.pow(1 - progress, 3);
 
       setAnimatedValues({
-        income: Math.round(targetValues.income * eased),
-        expense: Math.round(targetValues.expense * eased),
-        savings: Math.round(targetValues.savings * eased),
-        canSpend: Math.round(targetValues.canSpend * eased),
+        income: Math.round(predictions.predicted_income * eased),
+        expense: Math.round(predictions.predicted_expense * eased),
+        savings: Math.round(predictions.predicted_savings * eased),
+        canSpend: Math.round(predictions.can_spend * eased),
       });
 
       if (step >= steps) clearInterval(timer);
     }, interval);
 
     return () => clearInterval(timer);
-  }, [predictionData]);
-
-  // Build chart data from historical data + predictions
-  const chartDataWithPrediction = useMemo(() => {
-    if (!historicalData.length || !predictionData) {
-      return [];
-    }
-    
-    const data = historicalData.map(h => ({
-      month: h.month_label,
-      income: h.income,
-      expense: h.expense,
-      balance: h.balance,
-      isPredicted: false,
-    }));
-    
-    // Add predicted months
-    const predictedIncome = predictionData.income_prediction?.predicted_income || 0;
-    const predictedExpense = predictionData.expense_prediction?.predicted_expenses || 0;
-    
-    data.push({
-      month: "Feb (P)",
-      income: predictedIncome,
-      expense: predictedExpense,
-      balance: predictedIncome - predictedExpense,
-      isPredicted: true,
-    });
-    
-    data.push({
-      month: "Mar (P)",
-      income: Math.round(predictedIncome * 1.05),
-      expense: Math.round(predictedExpense * 0.95),
-      balance: Math.round((predictedIncome * 1.05) - (predictedExpense * 0.95)),
-      isPredicted: true,
-    });
-    
-    return data;
-  }, [historicalData, predictionData]);
-
-  const confidence = predictionData?.overall_confidence || 0;
+  }, [predictions]);
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -183,25 +131,12 @@ const PredictionTab = ({ expenses, budget }: PredictionTabProps) => {
     visible: { opacity: 1, y: 0 },
   };
 
-  // Loading state
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="text-center space-y-4">
-          <Loader2 className="w-12 h-12 animate-spin mx-auto text-primary" />
-          <p className="text-muted-foreground">Running ML predictions...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center space-y-4 max-w-md">
-          <AlertCircle className="w-12 h-12 mx-auto text-destructive" />
-          <p className="text-muted-foreground">{error}</p>
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-12 h-12 animate-spin text-primary" />
+          <p className="text-muted-foreground">Loading AI predictions...</p>
         </div>
       </div>
     );
@@ -222,10 +157,11 @@ const PredictionTab = ({ expenses, budget }: PredictionTabProps) => {
         <div>
           <h2 className="text-2xl font-display font-bold">AI Predictions</h2>
           <p className="text-muted-foreground text-sm">
-            Smart insights powered by ML analysis • {confidence.toFixed(0)}% confidence
-            {predictionData?.income_prediction?.method && (
+            Smart insights powered by ML analysis • {predictions?.confidence || 0}% confidence
+            {predictions?.income_details?.method && (
               <span className="ml-2 text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">
-                {predictionData.income_prediction.method.replace('_', ' ')}
+                {predictions.income_details.method === 'statistical' ? 'Cold Start Mode' : 
+                 predictions.income_details.method === 'hybrid' ? 'Hybrid Model' : 'ML Model'}
               </span>
             )}
           </p>
@@ -327,7 +263,7 @@ const PredictionTab = ({ expenses, budget }: PredictionTabProps) => {
 
         <div className="h-80">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartDataWithPrediction}>
+            <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.4} />

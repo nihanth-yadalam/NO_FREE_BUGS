@@ -1,25 +1,27 @@
 """
-VaultGuard Backend - Main FastAPI Application
-Connects frontend with bank-api and provides ML predictions
+VaultGuard Backend API
+Main FastAPI application for the VaultGuard financial management platform
 """
-
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
-import httpx
-import os
+from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 import random
-from dotenv import load_dotenv
 
-from ml_models import VaultGuardPredictor, categorize_expense
-
-load_dotenv()
+from config import (
+    DEFAULT_ACCOUNT_NUMBER,
+    DEFAULT_IFSC_CODE,
+    USER_NAME,
+    USER_EMAIL,
+    BANK_NAME
+)
+from bank_service import BankAPIService, setup_demo_user
+from ml_models import VaultGuardPredictor
 
 app = FastAPI(
-    title="VaultGuard Backend",
-    description="Financial Goal Management API for Freelancers",
+    title="VaultGuard API",
+    description="Backend API for VaultGuard - Financial Goal Management for Freelancers",
     version="1.0.0"
 )
 
@@ -32,18 +34,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuration
-BANK_API_URL = os.getenv("BANK_API_URL", "http://bank-service:3100")
-USER_ACCOUNT = os.getenv("USER_ACCOUNT", "VG12345678")
-USER_IFSC = os.getenv("USER_IFSC", "VAULT0001")
-USER_NAME = os.getenv("USER_NAME", "Rahul Sharma")
-USER_EMAIL = os.getenv("USER_EMAIL", "rahul.sharma@email.com")
-
-# Initialize predictor
-predictor = VaultGuardPredictor()
+# Initialize services
+bank_service = BankAPIService()
+predictor = VaultGuardPredictor(user_type='freelancer')
 
 
-# Pydantic Models
+# Pydantic models for request/response
 class UserProfile(BaseModel):
     name: str
     email: str
@@ -57,564 +53,445 @@ class Expense(BaseModel):
     id: str
     name: str
     amount: float
-    category: str  # regular, irregular, daily
+    category: str  # "regular", "irregular", "daily"
     date: str
-    transaction_id: Optional[str] = None
 
 
-class AddExpenseRequest(BaseModel):
+class ExpenseCreate(BaseModel):
     name: str
     amount: float
     category: str
-    date: Optional[str] = None
+    date: str
+
+
+class BudgetSettings(BaseModel):
+    monthly_budget: float
+    fixed_bills: float
+    days_in_month: int = 30
 
 
 class PredictionResponse(BaseModel):
-    predictedIncome: float
-    predictedExpense: float
-    predictedSavings: float
-    canSpend: float
-    confidence: float
-    incomeDetails: Dict[str, Any]
-    expenseDetails: Dict[str, Any]
+    predicted_income: float
+    predicted_expense: float
+    predicted_savings: float
+    can_spend: float
+    confidence: int
+    income_details: Dict
+    expense_details: Dict
 
 
-class DashboardData(BaseModel):
-    user: UserProfile
-    budget: float
-    totalSpent: float
-    expenses: List[Expense]
-    categorySummary: Dict[str, float]
+class ChartData(BaseModel):
+    month: str
+    income: float
+    expense: float
+    balance: float
+    isPredicted: Optional[bool] = False
 
 
-# Helper functions
-async def get_bank_user():
-    """Fetch user details from bank API"""
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(f"{BANK_API_URL}/getuser/{USER_ACCOUNT}/{USER_IFSC}")
-            if response.status_code == 200:
-                return response.json()
-            return None
-        except Exception as e:
-            print(f"Error fetching user: {e}")
-            return None
+# In-memory storage for expenses (in production, use a database)
+expenses_db: Dict[str, Expense] = {}
+budget_settings = BudgetSettings(monthly_budget=50000, fixed_bills=12000)
 
 
-async def get_bank_transactions():
-    """Fetch all transactions from bank API"""
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(
-                f"{BANK_API_URL}/gettransaction/{USER_ACCOUNT}/{USER_IFSC}/alltime"
-            )
-            if response.status_code == 200:
-                data = response.json()
-                return data.get('data', [])
-            return []
-        except Exception as e:
-            print(f"Error fetching transactions: {e}")
-            return []
-
-
-async def create_bank_user(initial_balance: float = 0):
-    """Create a new user in bank API"""
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                f"{BANK_API_URL}/adduser/{USER_ACCOUNT}/{USER_IFSC}",
-                json={"initial_balance": initial_balance}
-            )
-            return response.status_code == 201
-        except Exception as e:
-            print(f"Error creating user: {e}")
-            return False
-
-
-async def make_deposit(amount: float):
-    """Make a deposit to user's account"""
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                f"{BANK_API_URL}/deposit/{USER_ACCOUNT}/{USER_IFSC}/{amount}"
-            )
-            return response.status_code == 200
-        except Exception as e:
-            print(f"Error making deposit: {e}")
-            return False
-
-
-async def make_withdrawal(amount: float):
-    """Make a withdrawal from user's account"""
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                f"{BANK_API_URL}/withdraw/{USER_ACCOUNT}/{USER_IFSC}/{amount}"
-            )
-            return response.status_code == 200
-        except Exception as e:
-            print(f"Error making withdrawal: {e}")
-            return False
-
-
-# API Routes
+# ==================== Health Check ====================
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "UP", "message": "VaultGuard Backend is operational"}
+    try:
+        bank_health = await bank_service.health_check()
+        return {
+            "status": "UP",
+            "message": "VaultGuard API is operational",
+            "bank_api": bank_health.get("status", "UNKNOWN")
+        }
+    except Exception as e:
+        return {
+            "status": "UP",
+            "message": "VaultGuard API is operational",
+            "bank_api": "UNAVAILABLE",
+            "error": str(e)
+        }
 
 
-@app.get("/api/user", response_model=UserProfile)
+# ==================== User Endpoints ====================
+@app.get("/api/user/profile", response_model=UserProfile)
 async def get_user_profile():
-    """Get current user profile with bank details"""
-    bank_user = await get_bank_user()
-    
-    if not bank_user:
-        raise HTTPException(status_code=404, detail="User not found in bank")
-    
-    return UserProfile(
-        name=USER_NAME,
-        email=USER_EMAIL,
-        bankName="VaultGuard Bank",
-        accountNumber=f"XXXX XXXX {USER_ACCOUNT[-4:]}",
-        ifscCode=USER_IFSC,
-        balance=float(bank_user.get('balance', 0))
-    )
+    """Get the current user's profile including bank balance"""
+    try:
+        user_data = await bank_service.get_user(DEFAULT_ACCOUNT_NUMBER, DEFAULT_IFSC_CODE)
+        
+        if not user_data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return UserProfile(
+            name=USER_NAME,
+            email=USER_EMAIL,
+            bankName=BANK_NAME,
+            accountNumber=user_data['account_number'],
+            ifscCode=user_data['ifsc_code'],
+            balance=float(user_data['balance'])
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch user profile: {str(e)}")
 
 
-@app.get("/api/balance")
-async def get_balance():
-    """Get current account balance"""
-    bank_user = await get_bank_user()
-    
-    if not bank_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    return {"balance": float(bank_user.get('balance', 0))}
+@app.post("/api/user/setup")
+async def setup_user():
+    """Setup demo user with 200 transactions and 1000 rupees balance"""
+    try:
+        result = await setup_demo_user()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to setup user: {str(e)}")
+
+
+# ==================== Expense Endpoints ====================
+@app.get("/api/expenses", response_model=List[Expense])
+async def get_expenses():
+    """Get all expenses from bank transactions"""
+    try:
+        transactions = await bank_service.get_transactions(
+            DEFAULT_ACCOUNT_NUMBER,
+            DEFAULT_IFSC_CODE,
+            "alltime"
+        )
+        
+        expenses = []
+        expense_categories = {
+            (0, 200): ("daily", ["Coffee", "Snacks", "Transport"]),
+            (200, 500): ("daily", ["Lunch", "Dinner", "Fuel"]),
+            (500, 1500): ("irregular", ["Restaurant", "Entertainment", "Medicine"]),
+            (1500, 3000): ("irregular", ["Grocery Shopping", "Clothing"]),
+            (3000, 5000): ("regular", ["Electricity Bill", "Internet Bill", "Mobile Recharge"]),
+            (5000, float('inf')): ("regular", ["Rent", "Insurance", "EMI"])
+        }
+        
+        for tx in transactions:
+            # Only process withdrawals as expenses
+            if tx.get('sender_account') == DEFAULT_ACCOUNT_NUMBER or \
+               tx.get('receiver_account') == 'CASH_WITHDRAWAL':
+                amount = float(tx['amount'])
+                
+                # Categorize based on amount
+                category = "daily"
+                name = "Expense"
+                
+                for (min_amt, max_amt), (cat, names) in expense_categories.items():
+                    if min_amt <= amount < max_amt:
+                        category = cat
+                        name = random.choice(names)
+                        break
+                
+                expense = Expense(
+                    id=str(tx['id']),
+                    name=name,
+                    amount=amount,
+                    category=category,
+                    date=tx['timestamp'][:10]
+                )
+                expenses.append(expense)
+        
+        # Sort by date descending
+        expenses.sort(key=lambda x: x.date, reverse=True)
+        
+        # Also include manually added expenses
+        for exp in expenses_db.values():
+            expenses.append(exp)
+        
+        return expenses[:50]  # Return last 50 expenses
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch expenses: {str(e)}")
+
+
+@app.post("/api/expenses", response_model=Expense)
+async def add_expense(expense: ExpenseCreate):
+    """Add a new expense (creates a withdrawal in bank)"""
+    try:
+        # Create withdrawal in bank
+        await bank_service.withdraw(
+            DEFAULT_ACCOUNT_NUMBER,
+            DEFAULT_IFSC_CODE,
+            expense.amount,
+            f"{expense.date} 12:00:00"
+        )
+        
+        # Store in local db with generated ID
+        new_id = str(datetime.now().timestamp())
+        new_expense = Expense(
+            id=new_id,
+            name=expense.name,
+            amount=expense.amount,
+            category=expense.category,
+            date=expense.date
+        )
+        expenses_db[new_id] = new_expense
+        
+        return new_expense
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to add expense: {str(e)}")
+
+
+@app.delete("/api/expenses/{expense_id}")
+async def delete_expense(expense_id: str):
+    """Delete an expense (note: bank transaction cannot be reversed)"""
+    if expense_id in expenses_db:
+        del expenses_db[expense_id]
+        return {"message": "Expense deleted successfully"}
+    return {"message": "Expense removed from view"}
+
+
+# ==================== Budget Endpoints ====================
+@app.get("/api/budget")
+async def get_budget():
+    """Get budget settings and current spending status"""
+    try:
+        # Get user balance
+        user = await bank_service.get_user(DEFAULT_ACCOUNT_NUMBER, DEFAULT_IFSC_CODE)
+        balance = float(user['balance']) if user else 0
+        
+        # Get expenses for current month
+        expenses = await get_expenses()
+        
+        # Calculate totals by category (all expenses, not just current month)
+        category_totals = {"regular": 0, "irregular": 0, "daily": 0}
+        total_spent = 0
+        
+        for exp in expenses:
+            if exp.category in category_totals:
+                category_totals[exp.category] += exp.amount
+            total_spent += exp.amount
+        
+        return {
+            "monthly_budget": budget_settings.monthly_budget,
+            "total_spent": total_spent,
+            "remaining": budget_settings.monthly_budget - total_spent,
+            "percentage_used": round((total_spent / budget_settings.monthly_budget) * 100, 1) if budget_settings.monthly_budget > 0 else 0,
+            "category_totals": category_totals,
+            "current_balance": balance,
+            "fixed_bills": budget_settings.fixed_bills
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get budget: {str(e)}")
+
+
+@app.put("/api/budget")
+async def update_budget(settings: BudgetSettings):
+    """Update budget settings"""
+    global budget_settings
+    budget_settings = settings
+    return {"message": "Budget settings updated", "settings": settings}
+
+
+# ==================== Prediction Endpoints ====================
+@app.get("/api/predictions")
+async def get_predictions():
+    """Get ML-based predictions for income and expenses"""
+    try:
+        # Get user balance
+        user = await bank_service.get_user(DEFAULT_ACCOUNT_NUMBER, DEFAULT_IFSC_CODE)
+        balance = float(user['balance']) if user else 0
+        
+        # Get all transactions
+        transactions = await bank_service.get_transactions(
+            DEFAULT_ACCOUNT_NUMBER,
+            DEFAULT_IFSC_CODE,
+            "alltime"
+        )
+        
+        # Calculate days left in month
+        today = datetime.now()
+        days_in_month = 30
+        days_left = days_in_month - today.day + 1
+        
+        # Get predictions from ML model
+        prediction = predictor.get_full_prediction(
+            transactions=transactions,
+            account_number=DEFAULT_ACCOUNT_NUMBER,
+            current_balance=balance,
+            days_left=days_left,
+            fixed_bills_due=budget_settings.fixed_bills
+        )
+        
+        return {
+            "predicted_income": prediction['income']['predicted_income'],
+            "predicted_expense": prediction['expense']['predicted_expense'],
+            "predicted_savings": prediction['summary']['safe_to_spend'],
+            "can_spend": prediction['summary']['safe_to_spend'],
+            "confidence": prediction['summary']['overall_confidence'],
+            "current_balance": balance,
+            "days_left": days_left,
+            "income_details": prediction['income'],
+            "expense_details": prediction['expense'],
+            "summary": prediction['summary']
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get predictions: {str(e)}")
+
+
+@app.get("/api/predictions/chart-data")
+async def get_chart_data():
+    """Get historical and predicted data for charts"""
+    try:
+        # Get all transactions
+        transactions = await bank_service.get_transactions(
+            DEFAULT_ACCOUNT_NUMBER,
+            DEFAULT_IFSC_CODE,
+            "alltime"
+        )
+        
+        # Process into monthly data
+        monthly_data = {}
+        
+        for tx in transactions:
+            date = datetime.fromisoformat(tx['timestamp'].replace('Z', '+00:00'))
+            month_key = date.strftime('%b')
+            month_order = date.month
+            
+            if month_key not in monthly_data:
+                monthly_data[month_key] = {
+                    'income': 0,
+                    'expense': 0,
+                    'order': month_order
+                }
+            
+            amount = float(tx['amount'])
+            
+            if tx.get('sender_account') == 'EXTERNAL_DEPOSIT':
+                monthly_data[month_key]['income'] += amount
+            elif tx.get('sender_account') == DEFAULT_ACCOUNT_NUMBER:
+                monthly_data[month_key]['expense'] += amount
+        
+        # Sort by month order and convert to chart format
+        sorted_months = sorted(monthly_data.items(), key=lambda x: x[1]['order'])
+        
+        chart_data = []
+        for month, data in sorted_months[-7:]:  # Last 7 months
+            chart_data.append({
+                'month': month,
+                'income': round(data['income'], 2),
+                'expense': round(data['expense'], 2),
+                'balance': round(data['income'] - data['expense'], 2),
+                'isPredicted': False
+            })
+        
+        # Add predictions for next 2 months
+        predictions = await get_predictions()
+        
+        next_months = ['Feb', 'Mar']
+        for i, month in enumerate(next_months):
+            multiplier = 1 + (i * 0.05)
+            chart_data.append({
+                'month': f'{month} (P)',
+                'income': round(predictions['predicted_income'] * multiplier, 2),
+                'expense': round(predictions['predicted_expense'] * (1 - i * 0.05), 2),
+                'balance': round(predictions['predicted_savings'] * (1 + i * 0.15), 2),
+                'isPredicted': True
+            })
+        
+        return {"data": chart_data}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get chart data: {str(e)}")
+
+
+# ==================== Analytics Endpoints ====================
+@app.get("/api/analytics/category-summary")
+async def get_category_summary():
+    """Get expense summary by category"""
+    try:
+        expenses = await get_expenses()
+        
+        totals = {"regular": 0, "irregular": 0, "daily": 0}
+        counts = {"regular": 0, "irregular": 0, "daily": 0}
+        
+        for exp in expenses:
+            if exp.category in totals:
+                totals[exp.category] += exp.amount
+                counts[exp.category] += 1
+        
+        return {
+            "categories": [
+                {
+                    "name": "Regular",
+                    "id": "regular",
+                    "total": round(totals["regular"], 2),
+                    "count": counts["regular"],
+                    "description": "Bills & subscriptions"
+                },
+                {
+                    "name": "Irregular",
+                    "id": "irregular",
+                    "total": round(totals["irregular"], 2),
+                    "count": counts["irregular"],
+                    "description": "Shopping & occasions"
+                },
+                {
+                    "name": "Daily",
+                    "id": "daily",
+                    "total": round(totals["daily"], 2),
+                    "count": counts["daily"],
+                    "description": "Food & transport"
+                }
+            ],
+            "total": round(sum(totals.values()), 2)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get category summary: {str(e)}")
+
+
+@app.get("/api/analytics/weekly-spending")
+async def get_weekly_spending():
+    """Get weekly spending breakdown for charts"""
+    try:
+        expenses = await get_expenses()
+        
+        # Group by day of week
+        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        daily_data = {day: {"regular": 0, "irregular": 0, "daily": 0} for day in days}
+        
+        for exp in expenses:
+            try:
+                date = datetime.strptime(exp.date, '%Y-%m-%d')
+                day_name = days[date.weekday()]
+                if exp.category in daily_data[day_name]:
+                    daily_data[day_name][exp.category] += exp.amount
+            except:
+                continue
+        
+        result = []
+        for day in days:
+            result.append({
+                "day": day,
+                "regular": round(daily_data[day]["regular"], 2),
+                "irregular": round(daily_data[day]["irregular"], 2),
+                "daily": round(daily_data[day]["daily"], 2)
+            })
+        
+        return {"data": result}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get weekly spending: {str(e)}")
 
 
 @app.get("/api/transactions")
 async def get_transactions():
-    """Get all transactions"""
-    transactions = await get_bank_transactions()
-    return {"transactions": transactions, "count": len(transactions)}
-
-
-@app.get("/api/expenses", response_model=List[Expense])
-async def get_expenses():
-    """Get expenses (withdrawals and payments) as categorized expenses"""
-    transactions = await get_bank_transactions()
-    
-    expenses = []
-    for txn in transactions:
-        # Only include expenses (where user is sender)
-        if txn.get('sender_account') == USER_ACCOUNT:
-            receiver = txn.get('receiver_account', 'Unknown')
-            amount = float(txn.get('amount', 0))
-            timestamp = txn.get('timestamp', '')
-            
-            # Generate expense name based on receiver
-            if receiver == 'CASH_WITHDRAWAL':
-                name = 'Cash Withdrawal'
-            else:
-                name = f"Payment to {receiver[:10]}..."
-            
-            # Categorize the expense
-            category = categorize_expense(name, amount)
-            
-            expenses.append(Expense(
-                id=str(txn.get('id', '')),
-                name=name,
-                amount=amount,
-                category=category,
-                date=timestamp[:10] if timestamp else datetime.now().strftime('%Y-%m-%d'),
-                transaction_id=str(txn.get('id', ''))
-            ))
-    
-    # Sort by date descending
-    expenses.sort(key=lambda x: x.date, reverse=True)
-    return expenses
-
-
-@app.post("/api/expenses")
-async def add_expense(expense: AddExpenseRequest):
-    """Add a new expense (creates a withdrawal transaction)"""
-    # Make withdrawal from bank
-    success = await make_withdrawal(expense.amount)
-    
-    if not success:
-        raise HTTPException(status_code=400, detail="Failed to process expense")
-    
-    return {"message": "Expense added successfully", "amount": expense.amount}
-
-
-@app.get("/api/dashboard")
-async def get_dashboard_data():
-    """Get complete dashboard data"""
-    bank_user = await get_bank_user()
-    transactions = await get_bank_transactions()
-    
-    if not bank_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    balance = float(bank_user.get('balance', 0))
-    
-    # Process expenses
-    expenses = []
-    category_totals = {'regular': 0, 'irregular': 0, 'daily': 0}
-    
-    for txn in transactions:
-        if txn.get('sender_account') == USER_ACCOUNT:
-            receiver = txn.get('receiver_account', 'Unknown')
-            amount = float(txn.get('amount', 0))
-            timestamp = txn.get('timestamp', '')
-            
-            if receiver == 'CASH_WITHDRAWAL':
-                name = 'Cash Withdrawal'
-            else:
-                name = f"Payment - {receiver[:15]}"
-            
-            category = categorize_expense(name, amount)
-            category_totals[category] += amount
-            
-            expenses.append({
-                'id': str(txn.get('id', '')),
-                'name': name,
-                'amount': amount,
-                'category': category,
-                'date': timestamp[:10] if timestamp else datetime.now().strftime('%Y-%m-%d')
-            })
-    
-    # Sort expenses by date
-    expenses.sort(key=lambda x: x['date'], reverse=True)
-    
-    # Calculate monthly budget (estimate based on income patterns)
-    total_income = sum(
-        float(txn.get('amount', 0)) 
-        for txn in transactions 
-        if txn.get('receiver_account') == USER_ACCOUNT
-    )
-    total_expense = sum(category_totals.values())
-    
-    # Estimate monthly budget as 80% of average monthly income
-    months_of_data = max(1, len(set(t.get('timestamp', '')[:7] for t in transactions)))
-    monthly_budget = (total_income / months_of_data) * 0.8 if total_income > 0 else 50000
-    
-    return {
-        'user': {
-            'name': USER_NAME,
-            'email': USER_EMAIL,
-            'bankName': 'VaultGuard Bank',
-            'accountNumber': f"XXXX XXXX {USER_ACCOUNT[-4:]}",
-            'ifscCode': USER_IFSC,
-            'balance': balance
-        },
-        'budget': round(monthly_budget, 2),
-        'totalSpent': round(total_expense, 2),
-        'expenses': expenses[:20],  # Last 20 expenses
-        'categorySummary': category_totals
-    }
-
-
-@app.get("/api/predictions")
-async def get_predictions(days_left: int = 15, fixed_bills: float = 0):
-    """Get ML-based financial predictions"""
-    bank_user = await get_bank_user()
-    transactions = await get_bank_transactions()
-    
-    if not bank_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    balance = float(bank_user.get('balance', 0))
-    
-    # Get full prediction
-    prediction = predictor.get_full_prediction(
-        transactions=transactions,
-        user_account=USER_ACCOUNT,
-        current_balance=balance,
-        fixed_bills=fixed_bills,
-        days_left=days_left
-    )
-    
-    return prediction
-
-
-@app.get("/api/analytics/history")
-async def get_historical_data(months: int = 6):
-    """Get historical monthly data for charts"""
-    transactions = await get_bank_transactions()
-    
-    history = predictor.get_historical_summary(
-        transactions=transactions,
-        user_account=USER_ACCOUNT,
-        months=months
-    )
-    
-    return {"history": history}
-
-
-@app.get("/api/analytics/category-breakdown")
-async def get_category_breakdown():
-    """Get expense breakdown by category"""
-    transactions = await get_bank_transactions()
-    
-    category_totals = {'regular': 0, 'irregular': 0, 'daily': 0}
-    category_counts = {'regular': 0, 'irregular': 0, 'daily': 0}
-    
-    for txn in transactions:
-        if txn.get('sender_account') == USER_ACCOUNT:
-            receiver = txn.get('receiver_account', 'Unknown')
-            amount = float(txn.get('amount', 0))
-            
-            if receiver == 'CASH_WITHDRAWAL':
-                name = 'Cash Withdrawal'
-            else:
-                name = f"Payment - {receiver}"
-            
-            category = categorize_expense(name, amount)
-            category_totals[category] += amount
-            category_counts[category] += 1
-    
-    return {
-        'totals': category_totals,
-        'counts': category_counts,
-        'total_spent': sum(category_totals.values())
-    }
-
-
-@app.get("/api/analytics/weekly")
-async def get_weekly_spending():
-    """Get weekly spending pattern"""
-    transactions = await get_bank_transactions()
-    
-    # Initialize daily totals
-    daily_totals = {i: {'regular': 0, 'irregular': 0, 'daily': 0} for i in range(7)}
-    day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-    
-    for txn in transactions:
-        if txn.get('sender_account') == USER_ACCOUNT:
-            timestamp = txn.get('timestamp', '')
-            if timestamp:
-                try:
-                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                    day_of_week = dt.weekday()
-                    amount = float(txn.get('amount', 0))
-                    receiver = txn.get('receiver_account', '')
-                    
-                    if receiver == 'CASH_WITHDRAWAL':
-                        name = 'Cash Withdrawal'
-                    else:
-                        name = f"Payment - {receiver}"
-                    
-                    category = categorize_expense(name, amount)
-                    daily_totals[day_of_week][category] += amount
-                except:
-                    pass
-    
-    result = []
-    for i in range(7):
-        result.append({
-            'day': day_names[i],
-            'regular': round(daily_totals[i]['regular'], 2),
-            'irregular': round(daily_totals[i]['irregular'], 2),
-            'daily': round(daily_totals[i]['daily'], 2)
-        })
-    
-    return {'weekly': result}
-
-
-# Initialization endpoints (for setup)
-@app.delete("/api/setup/clear-data")
-async def setup_clear_data():
-    """Delete the user account and all transactions to start fresh"""
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.delete(f"{BANK_API_URL}/deleteuser/{USER_ACCOUNT}/{USER_IFSC}")
-            if response.status_code == 200:
-                return {"message": "User and transactions cleared successfully"}
-            else:
-                return {"message": "User may not exist or already cleared", "status": response.status_code}
-        except Exception as e:
-            return {"message": f"Error clearing data: {str(e)}"}
-
-@app.post("/api/setup/create-user")
-async def setup_create_user():
-    """Create the VaultGuard user in bank"""
-    # First check if user exists
-    existing = await get_bank_user()
-    if existing:
-        return {"message": "User already exists", "user": existing}
-    
-    # Create user
-    success = await create_bank_user(initial_balance=0)
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to create user")
-    
-    return {"message": "User created successfully"}
-
-
-@app.post("/api/setup/seed-transactions")
-async def setup_seed_transactions(num_transactions: int = 200, target_balance: float = 1000):
-    """
-    Seed dummy transactions - simple and realistic for a freelancer
-    All transactions are small (max ₹2000), no outliers
-    """
-    # Ensure user exists
-    existing = await get_bank_user()
-    if not existing:
-        await create_bank_user(initial_balance=0)
-    
-    end_date = datetime.now()
-    
-    # Simple expense categories with small amounts (all under ₹2000)
-    expenses = [
-        ('Coffee', 'daily', 30, 80),
-        ('Tea', 'daily', 10, 30),
-        ('Lunch', 'daily', 60, 150),
-        ('Dinner', 'daily', 80, 200),
-        ('Snacks', 'daily', 20, 60),
-        ('Auto', 'daily', 25, 80),
-        ('Metro', 'daily', 20, 50),
-        ('Uber', 'daily', 80, 200),
-        ('Grocery', 'irregular', 300, 800),
-        ('Amazon', 'irregular', 150, 600),
-        ('Movie', 'irregular', 150, 350),
-        ('Restaurant', 'irregular', 200, 500),
-        ('Medicine', 'irregular', 50, 300),
-        ('Haircut', 'irregular', 100, 200),
-        ('Phone Bill', 'regular', 199, 399),
-        ('Internet', 'regular', 500, 800),
-        ('Netflix', 'regular', 149, 199),
-        ('Electricity', 'regular', 400, 900),
-    ]
-    
-    # Simple income sources (small freelance payments)
-    incomes = [
-        ('Small Task', 300, 800),
-        ('Article', 500, 1200),
-        ('Design Work', 800, 1800),
-        ('Gig Payment', 200, 600),
-        ('Survey Reward', 50, 150),
-        ('Client Payment', 1000, 2000),
-    ]
-    
-    # Create 80 income + 120 expense = 200 transactions
-    num_income = 80
-    num_expense = 120
-    
-    all_txns = []
-    
-    # Generate income transactions spread over 180 days
-    for i in range(num_income):
-        inc = random.choice(incomes)
-        amount = random.randint(inc[1], inc[2])
-        days_ago = random.randint(1, 180)
-        ts = (end_date - timedelta(days=days_ago, hours=random.randint(8, 20))).isoformat()
-        all_txns.append(('income', amount, ts))
-    
-    # Generate expense transactions
-    for i in range(num_expense):
-        exp = random.choice(expenses)
-        amount = random.randint(exp[2], exp[3])
-        days_ago = random.randint(1, 180)
-        ts = (end_date - timedelta(days=days_ago, hours=random.randint(8, 20))).isoformat()
-        all_txns.append(('expense', amount, ts, exp[1]))  # include category type
-    
-    # Sort by timestamp
-    all_txns.sort(key=lambda x: x[2])
-    
-    # Calculate totals
-    total_income = sum(t[1] for t in all_txns if t[0] == 'income')
-    total_expense = sum(t[1] for t in all_txns if t[0] == 'expense')
-    
-    # Simulate running balance to find minimum buffer needed
-    running = 0
-    min_balance = 0
-    for txn in all_txns:
-        if txn[0] == 'income':
-            running += txn[1]
-        else:
-            running -= txn[1]
-        if running < min_balance:
-            min_balance = running
-    
-    # Final balance after all transactions = buffer + total_income - total_expense
-    # We want this = target_balance
-    # So buffer = target_balance - total_income + total_expense
-    # But we also need buffer >= abs(min_balance) to avoid going negative
-    calculated_buffer = target_balance - total_income + total_expense
-    min_required_buffer = abs(min_balance) if min_balance < 0 else 0
-    buffer_needed = max(calculated_buffer, min_required_buffer)
-    
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        count = 0
-        deposited = 0
-        withdrawn = 0
-        
-        # Initial deposit - buffer to cover all expenses + target balance
-        first_ts = (end_date - timedelta(days=181)).isoformat()
-        try:
-            r = await client.post(
-                f"{BANK_API_URL}/deposit/{USER_ACCOUNT}/{USER_IFSC}/{int(buffer_needed)}",
-                json={"timestamp": first_ts}
-            )
-            if r.status_code == 200:
-                deposited += buffer_needed
-                count += 1
-        except:
-            pass
-        
-        # Process all 200 transactions
-        for txn in all_txns:
-            try:
-                if txn[0] == 'income':
-                    r = await client.post(
-                        f"{BANK_API_URL}/deposit/{USER_ACCOUNT}/{USER_IFSC}/{txn[1]}",
-                        json={"timestamp": txn[2]}
-                    )
-                    if r.status_code == 200:
-                        deposited += txn[1]
-                        count += 1
-                else:
-                    r = await client.post(
-                        f"{BANK_API_URL}/withdraw/{USER_ACCOUNT}/{USER_IFSC}/{txn[1]}",
-                        json={"timestamp": txn[2]}
-                    )
-                    if r.status_code == 200:
-                        withdrawn += txn[1]
-                        count += 1
-            except:
-                pass
-    
-    # Get final balance
-    user = await get_bank_user()
-    final = float(user.get('balance', 0)) if user else 0
-    
-    return {
-        "message": f"Seeded {count} transactions",
-        "total_deposited": round(deposited, 2),
-        "total_withdrawn": round(withdrawn, 2),
-        "final_balance": final,
-        "target_balance": target_balance
-    }
-
-
-@app.post("/api/setup/full-setup")
-async def full_setup():
-    """
-    Complete setup: Create user and seed 200 transactions
-    Final balance will be 1000 rupees
-    """
-    # Step 1: Create user
-    await setup_create_user()
-    
-    # Step 2: Seed transactions
-    result = await setup_seed_transactions(num_transactions=200, target_balance=1000)
-    
-    return {
-        "message": "Full setup complete",
-        "details": result
-    }
+    """Get raw transactions from bank"""
+    try:
+        transactions = await bank_service.get_transactions(
+            DEFAULT_ACCOUNT_NUMBER,
+            DEFAULT_IFSC_CODE,
+            "alltime"
+        )
+        return {"transactions": transactions, "count": len(transactions)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get transactions: {str(e)}")
 
 
 if __name__ == "__main__":

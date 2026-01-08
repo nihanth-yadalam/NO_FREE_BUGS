@@ -1,38 +1,28 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, ChevronDown, Wallet, CreditCard, Building, Copy, Check, X, Loader2 } from "lucide-react";
-import { getUserProfile, type UserProfile } from "@/lib/api";
+import { User, ChevronDown, Wallet, CreditCard, Building, Copy, Check, X } from "lucide-react";
+
+interface UserDetails {
+  name: string;
+  email: string;
+  bankName: string;
+  accountNumber: string;
+  ifscCode: string;
+  balance: number;
+}
 
 const UserProfileDropdown = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState<UserProfile>({
+
+  const user: UserDetails = {
     name: "Rahul Sharma",
     email: "rahul.sharma@email.com",
-    bankName: "VaultGuard Bank",
-    accountNumber: "XXXX XXXX 5678",
-    ifscCode: "VAULT0001",
-    balance: 0,
-  });
-
-  // Fetch user profile when dropdown opens
-  useEffect(() => {
-    if (isOpen) {
-      const fetchUser = async () => {
-        try {
-          setLoading(true);
-          const data = await getUserProfile();
-          setUser(data);
-        } catch (err) {
-          console.error("Failed to fetch user profile:", err);
-        } finally {
-          setLoading(false);
-        }
-      };
-      fetchUser();
-    }
-  }, [isOpen]);
+    bankName: "HDFC Bank",
+    accountNumber: "XXXX XXXX 4532",
+    ifscCode: "HDFC0001234",
+    balance: 125000,
+  };
 
   const handleCopy = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
@@ -125,16 +115,9 @@ const UserProfileDropdown = () => {
                   <Wallet className="w-4 h-4" />
                   <span>Available Balance</span>
                 </div>
-                {loading ? (
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                    <span className="text-muted-foreground">Loading...</span>
-                  </div>
-                ) : (
-                  <p className="text-2xl font-display font-bold text-gradient">
-                    ₹{user.balance.toLocaleString()}
-                  </p>
-                )}
+                <p className="text-2xl font-display font-bold text-gradient">
+                  ₹{user.balance.toLocaleString()}
+                </p>
               </motion.div>
 
               {/* Bank details */}

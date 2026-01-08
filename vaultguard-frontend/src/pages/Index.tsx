@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Sidebar from "@/components/Sidebar";
 import AnimatedSpeedometer from "@/components/AnimatedSpeedometer";
@@ -7,110 +7,113 @@ import CategorySummary from "@/components/CategorySummary";
 import UserProfileDropdown from "@/components/UserProfileDropdown";
 import PredictionTab from "@/components/PredictionTab";
 import AnalyticsTransactions from "@/components/AnalyticsTransactions";
-import { getDashboardData, addExpense as apiAddExpense, setupFullSetup, type Expense, type DashboardData } from "@/lib/api";
-import { useToast } from "@/hooks/use-toast";
+import { getExpenses, getBudget, addExpense, deleteExpense, setupDemoUser, type Expense, type BudgetData } from "@/lib/api";
+import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, Database } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [budget, setBudget] = useState(50000);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
-  const [setupLoading, setSetupLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [settingUp, setSettingUp] = useState(false);
+  const [budgetData, setBudgetData] = useState<BudgetData | null>(null);
   const { toast } = useToast();
 
-  // Derived state from dashboard data
-  const budget = dashboardData?.budget ?? 50000;
-  const expenses = dashboardData?.expenses ?? [];
-  const userName = dashboardData?.user?.name ?? "User";
-  const totalSpent = expenses.reduce((sum, e) => sum + e.amount, 0);
-
-  const fetchDashboardData = useCallback(async () => {
+  // Fetch data from backend
+  const fetchData = async () => {
     try {
       setLoading(true);
-      setError(null);
-      const data = await getDashboardData();
-      setDashboardData(data);
-    } catch (err) {
-      console.error("Failed to fetch dashboard data:", err);
-      setError("Failed to connect to backend. Make sure services are running.");
+      const [expensesData, budgetInfo] = await Promise.all([
+        getExpenses(),
+        getBudget()
+      ]);
+      
+      setExpenses(expensesData);
+      setBudgetData(budgetInfo);
+      setBudget(budgetInfo.monthly_budget);
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
       toast({
         title: "Connection Error",
-        description: "Could not fetch data from backend. Try setting up the database first.",
-        variant: "destructive",
+        description: "Failed to connect to the backend. Make sure the server is running.",
+        variant: "destructive"
       });
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  };
 
-  const handleSetup = async () => {
+  // Setup demo user
+  const handleSetupDemoUser = async () => {
     try {
-      setSetupLoading(true);
+      setSettingUp(true);
       toast({
-        title: "Setting up...",
-        description: "Creating user and seeding 200 transactions. This may take a moment.",
+        title: "Setting up demo data",
+        description: "Creating user and 200 transactions. This may take a minute...",
       });
       
-      const result = await setupFullSetup();
+      await setupDemoUser();
       
       toast({
-        title: "Setup Complete!",
-        description: `Created user with ${result.details?.message || 'transactions'}. Final balance: ₹${result.details?.final_balance || 1000}`,
+        title: "Success!",
+        description: "Demo user created with 200 transactions and ₹1,000 balance.",
       });
       
-      // Refresh dashboard data
-      await fetchDashboardData();
-    } catch (err) {
-      console.error("Setup failed:", err);
+      // Refresh data
+      await fetchData();
+    } catch (error) {
+      console.error("Failed to setup demo user:", error);
       toast({
         title: "Setup Failed",
-        description: "Could not complete setup. Make sure bank-api is running.",
-        variant: "destructive",
+        description: "Failed to setup demo user. Please try again.",
+        variant: "destructive"
       });
     } finally {
-      setSetupLoading(false);
+      setSettingUp(false);
     }
   };
 
   useEffect(() => {
-    fetchDashboardData();
-  }, [fetchDashboardData]);
+    fetchData();
+  }, []);
+
+  const totalSpent = budgetData?.total_spent || expenses.reduce((sum, e) => sum + e.amount, 0);
 
   const handleAddExpense = async (expense: Omit<Expense, "id">) => {
     try {
-      await apiAddExpense({
-        name: expense.name,
-        amount: expense.amount,
-        category: expense.category,
-        date: expense.date,
-      });
+      const newExpense = await addExpense(expense);
+      setExpenses([newExpense, ...expenses]);
       
       toast({
         title: "Expense Added",
-        description: `₹${expense.amount} added as ${expense.category} expense.`,
+        description: `${expense.name} - ₹${expense.amount} added successfully.`,
       });
       
-      // Refresh data
-      await fetchDashboardData();
-    } catch (err) {
-      console.error("Failed to add expense:", err);
+      // Refresh budget data
+      const budgetInfo = await getBudget();
+      setBudgetData(budgetInfo);
+    } catch (error) {
+      console.error("Failed to add expense:", error);
       toast({
-        title: "Error",
-        description: "Failed to add expense. Please try again.",
-        variant: "destructive",
+        title: "Failed to Add Expense",
+        description: "Could not add expense. Please try again.",
+        variant: "destructive"
       });
     }
   };
 
   const handleDeleteExpense = async (id: string) => {
-    // For now, just remove from local state (backend delete not implemented)
-    if (dashboardData) {
-      setDashboardData({
-        ...dashboardData,
-        expenses: dashboardData.expenses.filter((e) => e.id !== id),
-      });
+    try {
+      await deleteExpense(id);
+      setExpenses(expenses.filter((e) => e.id !== id));
+      
+      // Refresh budget data
+      const budgetInfo = await getBudget();
+      setBudgetData(budgetInfo);
+    } catch (error) {
+      console.error("Failed to delete expense:", error);
     }
   };
 
@@ -120,47 +123,12 @@ const Index = () => {
     exit: { opacity: 0, x: -20 },
   };
 
-  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <Loader2 className="w-12 h-12 animate-spin mx-auto text-primary" />
-          <p className="text-muted-foreground">Loading dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state with setup option
-  if (error && !dashboardData) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-6 max-w-md p-8">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <Database className="w-8 h-8 text-destructive" />
-          </div>
-          <h2 className="text-2xl font-display font-bold">Connection Error</h2>
-          <p className="text-muted-foreground">{error}</p>
-          <div className="space-y-3">
-            <Button onClick={handleSetup} disabled={setupLoading} className="w-full">
-              {setupLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Setting up...
-                </>
-              ) : (
-                <>
-                  <Database className="w-4 h-4 mr-2" />
-                  Setup Database & Seed Data
-                </>
-              )}
-            </Button>
-            <Button variant="outline" onClick={fetchDashboardData} className="w-full">
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Retry Connection
-            </Button>
-          </div>
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-12 h-12 animate-spin text-primary" />
+          <p className="text-muted-foreground">Loading VaultGuard...</p>
         </div>
       </div>
     );
@@ -179,16 +147,22 @@ const Index = () => {
               animate={{ opacity: 1, y: 0 }}
             >
               <p className="text-muted-foreground text-sm">Welcome back,</p>
-              <h2 className="text-2xl font-display font-bold">{userName}</h2>
+              <h2 className="text-2xl font-display font-bold">Rahul Sharma</h2>
             </motion.div>
             <div className="flex items-center gap-4">
               <Button
-                variant="ghost"
-                size="icon"
-                onClick={fetchDashboardData}
-                title="Refresh data"
+                variant="outline"
+                size="sm"
+                onClick={handleSetupDemoUser}
+                disabled={settingUp}
+                className="gap-2"
               >
-                <RefreshCw className="w-4 h-4" />
+                {settingUp ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                {settingUp ? "Setting up..." : "Reset Demo Data"}
               </Button>
               <AddExpenseModal onAddExpense={handleAddExpense} />
               <UserProfileDropdown />
@@ -225,12 +199,22 @@ const Index = () => {
                         <span className="text-muted-foreground">Monthly Budget</span>
                         <span className="font-semibold">₹{budget.toLocaleString()}</span>
                       </div>
-                      <div className="flex justify-between text-sm mt-2">
-                        <span className="text-muted-foreground">Current Balance</span>
-                        <span className="font-semibold text-primary">
-                          ₹{(dashboardData?.user?.balance ?? 0).toLocaleString()}
-                        </span>
-                      </div>
+                      {budgetData && (
+                        <>
+                          <div className="flex justify-between text-sm mt-2">
+                            <span className="text-muted-foreground">Total Spent</span>
+                            <span className="font-semibold text-destructive">₹{totalSpent.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between text-sm mt-2">
+                            <span className="text-muted-foreground">Remaining</span>
+                            <span className="font-semibold text-primary">₹{budgetData.remaining.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between text-sm mt-2">
+                            <span className="text-muted-foreground">Bank Balance</span>
+                            <span className="font-semibold text-accent">₹{budgetData.current_balance.toLocaleString()}</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </motion.div>
 
