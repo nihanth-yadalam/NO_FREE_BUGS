@@ -1,21 +1,43 @@
 version: '3.8'
 
 services:
+  # The Local Database
+  bank-db:
+    image: postgres:15
+    container_name: bank-db
+    environment:
+      POSTGRES_USER: bank_user
+      POSTGRES_PASSWORD: bank_password
+      POSTGRES_DB: bank_db
+    # Note: No 'ports' mapping here means it's not accessible from your host machine
+    networks:
+      - bank-internal
+    volumes:
+      - ./bank-api/init/setup.sql:/docker-entrypoint-initdb.d/setup.sql
+
   # The Simulated Bank
   bank-api:
     build: ./bank-api
     container_name: bank-service
+    environment:
+      - DB_HOST=bank-db
+      - DB_USER=bank_user
+      - DB_PASSWORD=bank_password
+      - DB_NAME=bank_db
     ports:
       - "3100:3100"
+    depends_on:
+      - bank-db
     networks:
       - vaultguard-net
+      - bank-internal
 
   # The VaultGuard "Brain"
   vaultguard-backend:
     build: ./vaultguard-backend
     container_name: vaultguard-service
     environment:
-      - BANK_API_URL=http://bank-service:3000
+      - BANK_API_URL=http://bank-service:3100
       - PORT=8080
     ports:
       - "8080:8080"
@@ -27,3 +49,6 @@ services:
 networks:
   vaultguard-net:
     driver: bridge
+  bank-internal:
+    driver: bridge
+    internal: true # This further restricts external traffic
