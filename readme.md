@@ -100,4 +100,4 @@ VaultGuard moves beyond simple forecasting by deploying a Dual-Pipeline Architec
 - login (a sample user account has been setup already)
 
 ## Video Demonstration
-- https://vimeo.com/1152648591?share=copy&fl=sv&fe=ci
+- https://vimeo.com/1152688816?fl=ip&fe=ec
