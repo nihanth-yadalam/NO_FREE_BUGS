@@ -81,4 +81,3 @@ networks:
   bank-internal:
     driver: bridge
     internal: true
-    internal: true
