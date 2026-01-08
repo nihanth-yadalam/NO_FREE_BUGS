@@ -1,18 +1,20 @@
-# Use a lightweight Node.js environment
+# Use a slim version of Node.js
 FROM node:18-alpine
 
-# Set the working directory inside the container
-WORKDIR /app
+# Create app directory
+WORKDIR /usr/src/app
 
-# Copy the package files and install dependencies
+# Copy package files first (better for Docker caching)
 COPY package*.json ./
+
+# Install dependencies
 RUN npm install --production
 
-# Copy your actual code (server.js)
-COPY server.js .
+# Copy the rest of your application code
+COPY . .
 
-# The bank runs on 3000
-EXPOSE 3000
+# The port should match what's in your server.js and docker-compose
+EXPOSE 3100
 
 # Start the application
-CMD ["npm", "start"]
+CMD [ "node", "server.js" ]
