@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   PieChart,
@@ -13,7 +13,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { Trash2, TrendingUp, TrendingDown, Calendar, Filter, Search } from "lucide-react";
+import { Trash2, TrendingUp, TrendingDown, Calendar, Filter, Search, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getWeeklySpending, type WeeklyData } from "@/lib/api";
 
 interface Expense {
   id: string;
@@ -52,6 +53,33 @@ const AnalyticsTransactions = ({ expenses, onDelete }: AnalyticsTransactionsProp
   const [filter, setFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [weeklyData, setWeeklyData] = useState<WeeklyData[]>([]);
+  const [loadingWeekly, setLoadingWeekly] = useState(true);
+
+  // Fetch weekly spending data from backend
+  useEffect(() => {
+    const fetchWeeklyData = async () => {
+      try {
+        setLoadingWeekly(true);
+        const data = await getWeeklySpending();
+        setWeeklyData(data.weekly || []);
+      } catch (err) {
+        console.error("Failed to fetch weekly data:", err);
+        // Fall back to generated data
+        const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        setWeeklyData(days.map((day) => ({
+          day,
+          regular: Math.round(Math.random() * 3000 + 1000),
+          irregular: Math.round(Math.random() * 2000 + 500),
+          daily: Math.round(Math.random() * 500 + 100),
+        })));
+      } finally {
+        setLoadingWeekly(false);
+      }
+    };
+    
+    fetchWeeklyData();
+  }, []);
 
   // Calculate category totals for pie chart
   const categoryData = useMemo(() => {
@@ -65,17 +93,6 @@ const AnalyticsTransactions = ({ expenses, onDelete }: AnalyticsTransactionsProp
       { name: "Daily", value: totals.daily, color: categoryColors.daily },
     ].filter((d) => d.value > 0);
   }, [expenses]);
-
-  // Weekly spending data for bar chart
-  const weeklyData = useMemo(() => {
-    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    return days.map((day, index) => ({
-      day,
-      regular: Math.round(Math.random() * 3000 + 1000),
-      irregular: Math.round(Math.random() * 2000 + 500),
-      daily: Math.round(Math.random() * 500 + 100),
-    }));
-  }, []);
 
   // Filtered and searched expenses
   const filteredExpenses = useMemo(() => {

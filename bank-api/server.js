@@ -87,13 +87,19 @@ app.post('/adduser/:acc/:ifsc', async (req, res) => {
     }
 });
 
-// 6. Delete User
+// 6. Delete User (and their transactions)
 app.delete('/deleteuser/:acc/:ifsc', async (req, res) => {
     const { acc, ifsc } = req.params;
     try {
+        // Delete all transactions for this account first
+        await pool.query(
+            'DELETE FROM transactions WHERE sender_account = $1 OR receiver_account = $1',
+            [acc]
+        );
+        // Then delete the account
         const result = await pool.query('DELETE FROM accounts WHERE account_number = $1 AND ifsc_code = $2', [acc, ifsc]);
         if (result.rowCount === 0) return res.status(404).json({ error: 'User not found' });
-        res.json({ message: 'User deleted' });
+        res.json({ message: 'User and transactions deleted' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -102,6 +108,7 @@ app.delete('/deleteuser/:acc/:ifsc', async (req, res) => {
 // 7. Deposit (Atomic)
 app.post('/deposit/:acc/:ifsc/:amount', async (req, res) => {
     const { acc, ifsc, amount } = req.params;
+    const { timestamp } = req.body; // Optional custom timestamp
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -111,10 +118,17 @@ app.post('/deposit/:acc/:ifsc/:amount', async (req, res) => {
         );
         if (updateRes.rowCount === 0) throw new Error('Account not found');
 
-        await client.query(
-            'INSERT INTO transactions (sender_account, receiver_account, amount) VALUES ($1, $2, $3)',
-                           ['EXTERNAL_DEPOSIT', acc, amount]
-        );
+        if (timestamp) {
+            await client.query(
+                'INSERT INTO transactions (sender_account, receiver_account, amount, timestamp) VALUES ($1, $2, $3, $4)',
+                               ['EXTERNAL_DEPOSIT', acc, amount, timestamp]
+            );
+        } else {
+            await client.query(
+                'INSERT INTO transactions (sender_account, receiver_account, amount) VALUES ($1, $2, $3)',
+                               ['EXTERNAL_DEPOSIT', acc, amount]
+            );
+        }
         await client.query('COMMIT');
         res.json({ message: 'Deposit successful' });
     } catch (err) {
@@ -126,6 +140,7 @@ app.post('/deposit/:acc/:ifsc/:amount', async (req, res) => {
 // 8. Withdraw (Atomic with Balance Check)
 app.post('/withdraw/:acc/:ifsc/:amount', async (req, res) => {
     const { acc, ifsc, amount } = req.params;
+    const { timestamp } = req.body; // Optional custom timestamp
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -138,10 +153,17 @@ app.post('/withdraw/:acc/:ifsc/:amount', async (req, res) => {
         if (parseFloat(user.rows[0].balance) < parseFloat(amount)) throw new Error('Insufficient funds');
 
         await client.query('UPDATE accounts SET balance = balance - $1 WHERE account_number = $2', [amount, acc]);
-        await client.query(
-            'INSERT INTO transactions (sender_account, receiver_account, amount) VALUES ($1, $2, $3)',
-                           [acc, 'CASH_WITHDRAWAL', amount]
-        );
+        if (timestamp) {
+            await client.query(
+                'INSERT INTO transactions (sender_account, receiver_account, amount, timestamp) VALUES ($1, $2, $3, $4)',
+                               [acc, 'CASH_WITHDRAWAL', amount, timestamp]
+            );
+        } else {
+            await client.query(
+                'INSERT INTO transactions (sender_account, receiver_account, amount) VALUES ($1, $2, $3)',
+                               [acc, 'CASH_WITHDRAWAL', amount]
+            );
+        }
         await client.query('COMMIT');
         res.json({ message: 'Withdrawal successful' });
     } catch (err) {

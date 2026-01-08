@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Sidebar from "@/components/Sidebar";
 import AnimatedSpeedometer from "@/components/AnimatedSpeedometer";
@@ -7,34 +7,111 @@ import CategorySummary from "@/components/CategorySummary";
 import UserProfileDropdown from "@/components/UserProfileDropdown";
 import PredictionTab from "@/components/PredictionTab";
 import AnalyticsTransactions from "@/components/AnalyticsTransactions";
-
-interface Expense {
-  id: string;
-  name: string;
-  amount: number;
-  category: "regular" | "irregular" | "daily";
-  date: string;
-}
+import { getDashboardData, addExpense as apiAddExpense, setupFullSetup, type Expense, type DashboardData } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Loader2, RefreshCw, Database } from "lucide-react";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [budget] = useState(50000);
-  const [expenses, setExpenses] = useState<Expense[]>([
-    { id: "1", name: "Electricity Bill", amount: 2500, category: "regular", date: "2026-01-05" },
-    { id: "2", name: "Grocery Shopping", amount: 3200, category: "irregular", date: "2026-01-07" },
-    { id: "3", name: "Morning Coffee", amount: 150, category: "daily", date: "2026-01-08" },
-    { id: "4", name: "School Fees", amount: 15000, category: "regular", date: "2026-01-01" },
-    { id: "5", name: "Lunch", amount: 250, category: "daily", date: "2026-01-08" },
-  ]);
+  const [loading, setLoading] = useState(true);
+  const [setupLoading, setSetupLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const { toast } = useToast();
 
+  // Derived state from dashboard data
+  const budget = dashboardData?.budget ?? 50000;
+  const expenses = dashboardData?.expenses ?? [];
+  const userName = dashboardData?.user?.name ?? "User";
   const totalSpent = expenses.reduce((sum, e) => sum + e.amount, 0);
 
-  const handleAddExpense = (expense: Omit<Expense, "id">) => {
-    setExpenses([{ ...expense, id: Date.now().toString() }, ...expenses]);
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await getDashboardData();
+      setDashboardData(data);
+    } catch (err) {
+      console.error("Failed to fetch dashboard data:", err);
+      setError("Failed to connect to backend. Make sure services are running.");
+      toast({
+        title: "Connection Error",
+        description: "Could not fetch data from backend. Try setting up the database first.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
+  const handleSetup = async () => {
+    try {
+      setSetupLoading(true);
+      toast({
+        title: "Setting up...",
+        description: "Creating user and seeding 200 transactions. This may take a moment.",
+      });
+      
+      const result = await setupFullSetup();
+      
+      toast({
+        title: "Setup Complete!",
+        description: `Created user with ${result.details?.message || 'transactions'}. Final balance: ₹${result.details?.final_balance || 1000}`,
+      });
+      
+      // Refresh dashboard data
+      await fetchDashboardData();
+    } catch (err) {
+      console.error("Setup failed:", err);
+      toast({
+        title: "Setup Failed",
+        description: "Could not complete setup. Make sure bank-api is running.",
+        variant: "destructive",
+      });
+    } finally {
+      setSetupLoading(false);
+    }
   };
 
-  const handleDeleteExpense = (id: string) => {
-    setExpenses(expenses.filter((e) => e.id !== id));
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  const handleAddExpense = async (expense: Omit<Expense, "id">) => {
+    try {
+      await apiAddExpense({
+        name: expense.name,
+        amount: expense.amount,
+        category: expense.category,
+        date: expense.date,
+      });
+      
+      toast({
+        title: "Expense Added",
+        description: `₹${expense.amount} added as ${expense.category} expense.`,
+      });
+      
+      // Refresh data
+      await fetchDashboardData();
+    } catch (err) {
+      console.error("Failed to add expense:", err);
+      toast({
+        title: "Error",
+        description: "Failed to add expense. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteExpense = async (id: string) => {
+    // For now, just remove from local state (backend delete not implemented)
+    if (dashboardData) {
+      setDashboardData({
+        ...dashboardData,
+        expenses: dashboardData.expenses.filter((e) => e.id !== id),
+      });
+    }
   };
 
   const pageVariants = {
@@ -42,6 +119,52 @@ const Index = () => {
     animate: { opacity: 1, x: 0 },
     exit: { opacity: 0, x: -20 },
   };
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <Loader2 className="w-12 h-12 animate-spin mx-auto text-primary" />
+          <p className="text-muted-foreground">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state with setup option
+  if (error && !dashboardData) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-6 max-w-md p-8">
+          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+            <Database className="w-8 h-8 text-destructive" />
+          </div>
+          <h2 className="text-2xl font-display font-bold">Connection Error</h2>
+          <p className="text-muted-foreground">{error}</p>
+          <div className="space-y-3">
+            <Button onClick={handleSetup} disabled={setupLoading} className="w-full">
+              {setupLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Setting up...
+                </>
+              ) : (
+                <>
+                  <Database className="w-4 h-4 mr-2" />
+                  Setup Database & Seed Data
+                </>
+              )}
+            </Button>
+            <Button variant="outline" onClick={fetchDashboardData} className="w-full">
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Retry Connection
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -56,9 +179,17 @@ const Index = () => {
               animate={{ opacity: 1, y: 0 }}
             >
               <p className="text-muted-foreground text-sm">Welcome back,</p>
-              <h2 className="text-2xl font-display font-bold">Rahul Sharma</h2>
+              <h2 className="text-2xl font-display font-bold">{userName}</h2>
             </motion.div>
             <div className="flex items-center gap-4">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={fetchDashboardData}
+                title="Refresh data"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
               <AddExpenseModal onAddExpense={handleAddExpense} />
               <UserProfileDropdown />
             </div>
@@ -93,6 +224,12 @@ const Index = () => {
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Monthly Budget</span>
                         <span className="font-semibold">₹{budget.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-sm mt-2">
+                        <span className="text-muted-foreground">Current Balance</span>
+                        <span className="font-semibold text-primary">
+                          ₹{(dashboardData?.user?.balance ?? 0).toLocaleString()}
+                        </span>
                       </div>
                     </div>
                   </motion.div>

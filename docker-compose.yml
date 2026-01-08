@@ -34,6 +34,27 @@ services:
       - bank-internal
 
   # -----------------------------
+  # VaultGuard Backend (Python/FastAPI)
+  # -----------------------------
+  vaultguard-backend:
+    build: ./vaultguard-backend
+    container_name: vaultguard-backend
+    environment:
+      - BANK_API_URL=http://bank-service:3100
+      - USER_ACCOUNT=VG12345678
+      - USER_IFSC=VAULT0001
+      - USER_NAME=Rahul Sharma
+      - USER_EMAIL=rahul.sharma@email.com
+    ports:
+      - "8080:8080"
+    depends_on:
+      - bank-api
+    networks:
+      - vaultguard-net
+    volumes:
+      - ./vaultguard-backend:/app
+
+  # -----------------------------
   # VaultGuard Frontend
   # -----------------------------
   vaultguard-frontend:
@@ -47,6 +68,8 @@ services:
     volumes:
       - ./vaultguard-frontend:/app
       - /app/node_modules # Important: prevents local modules from clashing
+    depends_on:
+      - vaultguard-backend
     networks:
       - vaultguard-net
 
