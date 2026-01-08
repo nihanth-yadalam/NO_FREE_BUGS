@@ -79,4 +79,5 @@ VaultGuard acts as a **financial command center**, providing:
 - visit `localhost:5173`
 - login (a sample user account has been setup already)
 
-  Video Link : https://vimeo.com/1152648591?share=copy&fl=sv&fe=ci
+## Video Demonstration
+- https://vimeo.com/1152648591?share=copy&fl=sv&fe=ci
