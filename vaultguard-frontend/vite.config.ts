@@ -1,14 +1,19 @@
-// vaultguard-frontend/vite.config.ts
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
-  server: {
-    host: true, // Listen on all addresses
-    port: 5173,
-    watch: {
-      usePolling: true, // Required for Docker hot reload to catch file saves
+  resolve: {
+    alias: {
+      "@": path.resolve(process.cwd(), "src"), // Uses current working directory
     },
   },
-})
+  server: {
+    host: true,
+    port: 5173,
+    watch: {
+      usePolling: true,
+    },
+  },
+});
