@@ -61,6 +61,11 @@ services:
       - "3000:3000"
     environment:
       - VITE_API_BASE_URL=http://localhost:8080
+      # --- ADD THESE LINES ---
+    volumes:
+      - ./frontend:/app           # Syncs local code to container
+      - /app/node_modules        # Prevents local node_modules from overwriting container's
+    # -----------------------
 #    depends_on:
 #      - vaultguard-backend
     networks:

@@ -2,7 +2,16 @@ import { ReactNode } from "react";
 
 export default function Card({ children }: { children: ReactNode }) {
   return (
-    <div className="bg-card border border-[#1F2937] rounded-2xl p-6 shadow-xl">
+    <div
+      className="
+      bg-card
+      rounded-2xl
+      p-8
+      shadow-2xl
+      border border-white/5
+      backdrop-blur
+    "
+    >
       {children}
     </div>
   );
