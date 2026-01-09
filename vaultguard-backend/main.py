@@ -30,7 +30,7 @@ from auth import (
     get_user,
     add_user,
     hash_password,
-    generate_account_number
+    generate_unique_account_number
 )
 
 app = FastAPI(
@@ -156,8 +156,14 @@ async def register(user_register: UserRegister):
         )
     
     # Generate unique account number and IFSC code
-    account_number = generate_account_number()
     ifsc_code = "VAULT001"
+    try:
+        account_number = await generate_unique_account_number(bank_service, ifsc_code)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate unique account number. Please try again."
+        )
     
     # Generate random initial balance between 10,000 and 50,000
     initial_balance = random.randint(10000, 50000)

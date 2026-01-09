@@ -106,6 +106,10 @@ VaultGuard moves beyond simple forecasting by deploying a Dual-Pipeline Architec
 
 ## Steps to run
 - Clone the repo
+- Generate a SECRET_KEY with 
+```bash
+echo "SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(64))')" > .env
+```
 - run `docker compose up --build` (run with sudo if required on linux)
 - visit `localhost:5173`
 - login (a sample user account has been setup already)

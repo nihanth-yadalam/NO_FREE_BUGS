@@ -36,6 +36,11 @@ class BankAPIService:
             response.raise_for_status()
             return response.json()
     
+    async def account_exists(self, account_number: str, ifsc_code: str = "VAULT001") -> bool:
+        """Check if an account number already exists in the bank"""
+        user = await self.get_user(account_number, ifsc_code)
+        return user is not None
+    
     async def create_user(self, account_number: str, ifsc_code: str, initial_balance: float = 0) -> Dict:
         """Create a new user"""
         async with httpx.AsyncClient(timeout=self.timeout) as client:

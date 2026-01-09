@@ -61,8 +61,47 @@ class UserInDB(User):
 
 
 def generate_account_number() -> str:
-    """Generate a unique 10-digit account number"""
+    """Generate a random 10-digit account number (use generate_unique_account_number for uniqueness check)"""
     return ''.join([str(random.randint(0, 9)) for _ in range(10)])
+
+
+async def generate_unique_account_number(bank_service, ifsc_code: str = "VAULT001", max_attempts: int = 10) -> str:
+    """
+    Generate a unique 10-digit account number that doesn't exist in the database.
+    Checks against both local user database and Bank API.
+    
+    Args:
+        bank_service: The bank API service instance for checking account existence
+        ifsc_code: The IFSC code to use for checking (default: VAULT001)
+        max_attempts: Maximum number of attempts to generate a unique number
+    
+    Returns:
+        A unique account number string
+    
+    Raises:
+        ValueError: If unable to generate unique account number after max_attempts
+    """
+    users_db = get_users_db()
+    
+    for _ in range(max_attempts):
+        account_number = generate_account_number()
+        
+        # Check if account exists in local user database
+        local_exists = any(
+            user.account_number == account_number 
+            for user in users_db.values()
+        )
+        
+        if local_exists:
+            continue
+        
+        # Check if account exists in Bank API
+        bank_exists = await bank_service.account_exists(account_number, ifsc_code)
+        
+        if not bank_exists:
+            return account_number
+    
+    raise ValueError(f"Unable to generate unique account number after {max_attempts} attempts")
 
 
 def hash_password(password: str) -> str:
