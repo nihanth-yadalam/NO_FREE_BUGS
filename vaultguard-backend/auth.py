@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 import bcrypt
+import random
 from pydantic import BaseModel
 
 from config import (
@@ -17,7 +18,9 @@ from config import (
     DEMO_USER_EMAIL,
     DEMO_USER_PASSWORD,
     USER_NAME,
-    USER_EMAIL
+    USER_EMAIL,
+    DEFAULT_ACCOUNT_NUMBER,
+    DEFAULT_IFSC_CODE
 )
 
 # Security
@@ -48,11 +51,18 @@ class UserRegister(BaseModel):
 class User(BaseModel):
     email: str
     name: str
+    account_number: str
+    ifsc_code: str
     disabled: bool = False
 
 
 class UserInDB(User):
     hashed_password: str
+
+
+def generate_account_number() -> str:
+    """Generate a unique 10-digit account number"""
+    return ''.join([str(random.randint(0, 9)) for _ in range(10)])
 
 
 def hash_password(password: str) -> str:
@@ -75,6 +85,8 @@ _users_db = {
     DEMO_USER_EMAIL: UserInDB(
         email=DEMO_USER_EMAIL,
         name=USER_NAME,
+        account_number=DEFAULT_ACCOUNT_NUMBER,
+        ifsc_code=DEFAULT_IFSC_CODE,
         hashed_password=_DEMO_PASSWORD_HASH,
         disabled=False
     )
@@ -85,13 +97,15 @@ def get_users_db():
     return _users_db
 
 
-def add_user(email: str, name: str, hashed_password: str) -> UserInDB:
+def add_user(email: str, name: str, hashed_password: str, account_number: str, ifsc_code: str) -> UserInDB:
     """Add a new user to the database"""
     if email in _users_db:
         raise ValueError("User already exists")
     user = UserInDB(
         email=email,
         name=name,
+        account_number=account_number,
+        ifsc_code=ifsc_code,
         hashed_password=hashed_password,
         disabled=False
     )
@@ -154,7 +168,13 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     user = get_user(email=token_data.email)
     if user is None:
         raise credentials_exception
-    return User(email=user.email, name=user.name, disabled=user.disabled)
+    return User(
+        email=user.email,
+        name=user.name,
+        account_number=user.account_number,
+        ifsc_code=user.ifsc_code,
+        disabled=user.disabled
+    )
 
 
 async def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
