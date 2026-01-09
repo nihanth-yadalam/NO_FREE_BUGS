@@ -84,6 +84,8 @@ class BankAPIService:
         timestamp: Optional[str] = None
     ) -> Dict:
         """Make a deposit"""
+        if amount <= 0:
+            raise ValueError("Deposit amount must be a positive number")
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             json_data = {"timestamp": timestamp} if timestamp else {}
             response = await client.post(
@@ -101,6 +103,8 @@ class BankAPIService:
         timestamp: Optional[str] = None
     ) -> Dict:
         """Make a withdrawal"""
+        if amount <= 0:
+            raise ValueError("Withdrawal amount must be a positive number")
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             json_data = {"timestamp": timestamp} if timestamp else {}
             response = await client.post(

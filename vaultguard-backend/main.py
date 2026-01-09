@@ -4,7 +4,7 @@ Main FastAPI application for the VaultGuard financial management platform
 """
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 import random
@@ -66,28 +66,28 @@ class UserProfile(BaseModel):
 class Expense(BaseModel):
     id: str
     name: str
-    amount: float
+    amount: float = Field(..., gt=0, description="Amount must be a positive number")
     category: str  # "regular", "irregular", "daily"
     date: str
 
 
 class ExpenseCreate(BaseModel):
     name: str
-    amount: float
+    amount: float = Field(..., gt=0, description="Amount must be a positive number")
     category: str
     date: str
 
 
 class IncomeCreate(BaseModel):
-    amount: float
+    amount: float = Field(..., gt=0, description="Amount must be a positive number")
     description: str
     date: str
 
 
 class BudgetSettings(BaseModel):
-    monthly_budget: float
-    fixed_bills: float
-    days_in_month: int = 30
+    monthly_budget: float = Field(..., gt=0, description="Monthly budget must be a positive number")
+    fixed_bills: float = Field(..., ge=0, description="Fixed bills must be zero or positive")
+    days_in_month: int = Field(default=30, gt=0, le=31, description="Days in month must be between 1 and 31")
 
 
 class PredictionResponse(BaseModel):
