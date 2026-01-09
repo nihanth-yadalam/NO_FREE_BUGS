@@ -29,8 +29,7 @@ from auth import (
     get_current_active_user,
     get_user,
     add_user,
-    hash_password,
-    generate_account_number
+    hash_password
 )
 
 app = FastAPI(
@@ -75,12 +74,6 @@ class ExpenseCreate(BaseModel):
     name: str
     amount: float
     category: str
-    date: str
-
-
-class IncomeCreate(BaseModel):
-    amount: float
-    description: str
     date: str
 
 
@@ -155,31 +148,13 @@ async def register(user_register: UserRegister):
             detail="Password must be at least 6 characters long"
         )
     
-    # Generate unique account number and IFSC code
-    account_number = generate_account_number()
-    ifsc_code = "VAULT001"
-    
-    # Generate random initial balance between 10,000 and 50,000
-    initial_balance = random.randint(10000, 50000)
-    
-    # Create bank account first with initial balance
-    try:
-        await bank_service.create_user(account_number, ifsc_code, initial_balance)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to create bank account: {str(e)}"
-        )
-    
-    # Create new user in auth system
+    # Create new user
     try:
         hashed_password = hash_password(user_register.password)
         add_user(
             email=user_register.email,
             name=user_register.name,
-            hashed_password=hashed_password,
-            account_number=account_number,
-            ifsc_code=ifsc_code
+            hashed_password=hashed_password
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -214,17 +189,17 @@ async def health_check():
 
 # ==================== User Endpoints ====================
 @app.get("/api/user/profile", response_model=UserProfile)
-async def get_user_profile(current_user: User = Depends(get_current_active_user)):
+async def get_user_profile():
     """Get the current user's profile including bank balance"""
     try:
-        user_data = await bank_service.get_user(current_user.account_number, current_user.ifsc_code)
+        user_data = await bank_service.get_user(DEFAULT_ACCOUNT_NUMBER, DEFAULT_IFSC_CODE)
         
         if not user_data:
-            raise HTTPException(status_code=404, detail="User not found in bank")
+            raise HTTPException(status_code=404, detail="User not found")
         
         return UserProfile(
-            name=current_user.name,
-            email=current_user.email,
+            name=USER_NAME,
+            email=USER_EMAIL,
             bankName=BANK_NAME,
             accountNumber=user_data['account_number'],
             ifscCode=user_data['ifsc_code'],
@@ -237,28 +212,23 @@ async def get_user_profile(current_user: User = Depends(get_current_active_user)
 
 
 @app.post("/api/user/setup")
-async def setup_user(current_user: User = Depends(get_current_active_user)):
+async def setup_user():
     """Setup demo user with 200 transactions and 1000 rupees balance"""
     try:
-        # Only allow demo user to setup demo data
-        if current_user.account_number != DEFAULT_ACCOUNT_NUMBER:
-            raise HTTPException(status_code=403, detail="Demo setup only available for demo account")
         result = await setup_demo_user()
         return result
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to setup user: {str(e)}")
 
 
 # ==================== Expense Endpoints ====================
 @app.get("/api/expenses", response_model=List[Expense])
-async def get_expenses(current_user: User = Depends(get_current_active_user)):
+async def get_expenses():
     """Get all expenses from bank transactions"""
     try:
         transactions = await bank_service.get_transactions(
-            current_user.account_number,
-            current_user.ifsc_code,
+            DEFAULT_ACCOUNT_NUMBER,
+            DEFAULT_IFSC_CODE,
             "alltime"
         )
         
@@ -274,7 +244,7 @@ async def get_expenses(current_user: User = Depends(get_current_active_user)):
         
         for tx in transactions:
             # Only process withdrawals as expenses
-            if tx.get('sender_account') == current_user.account_number or \
+            if tx.get('sender_account') == DEFAULT_ACCOUNT_NUMBER or \
                tx.get('receiver_account') == 'CASH_WITHDRAWAL':
                 amount = float(tx['amount'])
                 
@@ -300,11 +270,9 @@ async def get_expenses(current_user: User = Depends(get_current_active_user)):
         # Sort by date descending
         expenses.sort(key=lambda x: x.date, reverse=True)
         
-        # Also include manually added expenses for this user
-        user_expense_key = f"{current_user.account_number}_expenses"
-        if user_expense_key in expenses_db:
-            for exp in expenses_db[user_expense_key].values():
-                expenses.append(exp)
+        # Also include manually added expenses
+        for exp in expenses_db.values():
+            expenses.append(exp)
         
         return expenses[:50]  # Return last 50 expenses
         
@@ -313,18 +281,18 @@ async def get_expenses(current_user: User = Depends(get_current_active_user)):
 
 
 @app.post("/api/expenses", response_model=Expense)
-async def add_expense(expense: ExpenseCreate, current_user: User = Depends(get_current_active_user)):
+async def add_expense(expense: ExpenseCreate):
     """Add a new expense (creates a withdrawal in bank)"""
     try:
         # Create withdrawal in bank
         await bank_service.withdraw(
-            current_user.account_number,
-            current_user.ifsc_code,
+            DEFAULT_ACCOUNT_NUMBER,
+            DEFAULT_IFSC_CODE,
             expense.amount,
             f"{expense.date} 12:00:00"
         )
         
-        # Store in local db with generated ID (per user)
+        # Store in local db with generated ID
         new_id = str(datetime.now().timestamp())
         new_expense = Expense(
             id=new_id,
@@ -333,11 +301,7 @@ async def add_expense(expense: ExpenseCreate, current_user: User = Depends(get_c
             category=expense.category,
             date=expense.date
         )
-        
-        user_expense_key = f"{current_user.account_number}_expenses"
-        if user_expense_key not in expenses_db:
-            expenses_db[user_expense_key] = {}
-        expenses_db[user_expense_key][new_id] = new_expense
+        expenses_db[new_id] = new_expense
         
         return new_expense
         
@@ -346,50 +310,25 @@ async def add_expense(expense: ExpenseCreate, current_user: User = Depends(get_c
 
 
 @app.delete("/api/expenses/{expense_id}")
-async def delete_expense(expense_id: str, current_user: User = Depends(get_current_active_user)):
+async def delete_expense(expense_id: str):
     """Delete an expense (note: bank transaction cannot be reversed)"""
-    user_expense_key = f"{current_user.account_number}_expenses"
-    if user_expense_key in expenses_db and expense_id in expenses_db[user_expense_key]:
-        del expenses_db[user_expense_key][expense_id]
+    if expense_id in expenses_db:
+        del expenses_db[expense_id]
         return {"message": "Expense deleted successfully"}
     return {"message": "Expense removed from view"}
 
 
-# ==================== Income Endpoints ====================
-@app.post("/api/income")
-async def add_income(income: IncomeCreate, current_user: User = Depends(get_current_active_user)):
-    """Add income (creates a deposit in bank)"""
-    try:
-        # Create deposit in bank
-        await bank_service.deposit(
-            current_user.account_number,
-            current_user.ifsc_code,
-            income.amount,
-            f"{income.date} 12:00:00"
-        )
-        
-        return {
-            "message": "Income added successfully",
-            "amount": income.amount,
-            "description": income.description,
-            "date": income.date
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to add income: {str(e)}")
-
-
 # ==================== Budget Endpoints ====================
 @app.get("/api/budget")
-async def get_budget(current_user: User = Depends(get_current_active_user)):
+async def get_budget():
     """Get budget settings and current spending status"""
     try:
         # Get user balance
-        user = await bank_service.get_user(current_user.account_number, current_user.ifsc_code)
+        user = await bank_service.get_user(DEFAULT_ACCOUNT_NUMBER, DEFAULT_IFSC_CODE)
         balance = float(user['balance']) if user else 0
         
         # Get expenses for current month
-        expenses = await get_expenses(current_user)
+        expenses = await get_expenses()
         
         # Calculate totals by category (all expenses, not just current month)
         category_totals = {"regular": 0, "irregular": 0, "daily": 0}
@@ -415,7 +354,7 @@ async def get_budget(current_user: User = Depends(get_current_active_user)):
 
 
 @app.put("/api/budget")
-async def update_budget(settings: BudgetSettings, current_user: User = Depends(get_current_active_user)):
+async def update_budget(settings: BudgetSettings):
     """Update budget settings"""
     global budget_settings
     budget_settings = settings
@@ -424,17 +363,17 @@ async def update_budget(settings: BudgetSettings, current_user: User = Depends(g
 
 # ==================== Prediction Endpoints ====================
 @app.get("/api/predictions")
-async def get_predictions(current_user: User = Depends(get_current_active_user)):
+async def get_predictions():
     """Get ML-based predictions for income and expenses"""
     try:
         # Get user balance
-        user = await bank_service.get_user(current_user.account_number, current_user.ifsc_code)
+        user = await bank_service.get_user(DEFAULT_ACCOUNT_NUMBER, DEFAULT_IFSC_CODE)
         balance = float(user['balance']) if user else 0
         
         # Get all transactions
         transactions = await bank_service.get_transactions(
-            current_user.account_number,
-            current_user.ifsc_code,
+            DEFAULT_ACCOUNT_NUMBER,
+            DEFAULT_IFSC_CODE,
             "alltime"
         )
         
@@ -446,7 +385,7 @@ async def get_predictions(current_user: User = Depends(get_current_active_user))
         # Get predictions from ML model
         prediction = predictor.get_full_prediction(
             transactions=transactions,
-            account_number=current_user.account_number,
+            account_number=DEFAULT_ACCOUNT_NUMBER,
             current_balance=balance,
             days_left=days_left,
             fixed_bills_due=budget_settings.fixed_bills
@@ -470,13 +409,13 @@ async def get_predictions(current_user: User = Depends(get_current_active_user))
 
 
 @app.get("/api/predictions/chart-data")
-async def get_chart_data(current_user: User = Depends(get_current_active_user)):
+async def get_chart_data():
     """Get historical and predicted data for charts"""
     try:
         # Get all transactions
         transactions = await bank_service.get_transactions(
-            current_user.account_number,
-            current_user.ifsc_code,
+            DEFAULT_ACCOUNT_NUMBER,
+            DEFAULT_IFSC_CODE,
             "alltime"
         )
         
@@ -499,7 +438,7 @@ async def get_chart_data(current_user: User = Depends(get_current_active_user)):
             
             if tx.get('sender_account') == 'EXTERNAL_DEPOSIT':
                 monthly_data[month_key]['income'] += amount
-            elif tx.get('sender_account') == current_user.account_number:
+            elif tx.get('sender_account') == DEFAULT_ACCOUNT_NUMBER:
                 monthly_data[month_key]['expense'] += amount
         
         # Sort by month order and convert to chart format
@@ -516,7 +455,7 @@ async def get_chart_data(current_user: User = Depends(get_current_active_user)):
             })
         
         # Add predictions for next 2 months
-        predictions = await get_predictions(current_user)
+        predictions = await get_predictions()
         
         next_months = ['Feb', 'Mar']
         for i, month in enumerate(next_months):
@@ -537,10 +476,10 @@ async def get_chart_data(current_user: User = Depends(get_current_active_user)):
 
 # ==================== Analytics Endpoints ====================
 @app.get("/api/analytics/category-summary")
-async def get_category_summary(current_user: User = Depends(get_current_active_user)):
+async def get_category_summary():
     """Get expense summary by category"""
     try:
-        expenses = await get_expenses(current_user)
+        expenses = await get_expenses()
         
         totals = {"regular": 0, "irregular": 0, "daily": 0}
         counts = {"regular": 0, "irregular": 0, "daily": 0}
@@ -582,10 +521,10 @@ async def get_category_summary(current_user: User = Depends(get_current_active_u
 
 
 @app.get("/api/analytics/weekly-spending")
-async def get_weekly_spending(current_user: User = Depends(get_current_active_user)):
+async def get_weekly_spending():
     """Get weekly spending breakdown for charts"""
     try:
-        expenses = await get_expenses(current_user)
+        expenses = await get_expenses()
         
         # Group by day of week
         days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -616,12 +555,12 @@ async def get_weekly_spending(current_user: User = Depends(get_current_active_us
 
 
 @app.get("/api/transactions")
-async def get_transactions(current_user: User = Depends(get_current_active_user)):
+async def get_transactions():
     """Get raw transactions from bank"""
     try:
         transactions = await bank_service.get_transactions(
-            current_user.account_number,
-            current_user.ifsc_code,
+            DEFAULT_ACCOUNT_NUMBER,
+            DEFAULT_IFSC_CODE,
             "alltime"
         )
         return {"transactions": transactions, "count": len(transactions)}

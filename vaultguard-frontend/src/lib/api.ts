@@ -42,12 +42,6 @@ export interface ExpenseCreate {
   date: string;
 }
 
-export interface IncomeCreate {
-  amount: number;
-  description: string;
-  date: string;
-}
-
 export interface BudgetData {
   monthly_budget: number;
   total_spent: number;
@@ -191,21 +185,6 @@ export async function deleteExpense(expenseId: string): Promise<void> {
   if (!response.ok) {
     throw new Error('Failed to delete expense');
   }
-}
-
-/**
- * Add income (deposit)
- */
-export async function addIncome(income: IncomeCreate): Promise<{ message: string; amount: number }> {
-  const response = await fetch(`${API_BASE_URL}/api/income`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(income),
-  });
-  if (!response.ok) {
-    throw new Error('Failed to add income');
-  }
-  return response.json();
 }
 
 /**

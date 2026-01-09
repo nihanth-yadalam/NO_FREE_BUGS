@@ -46,6 +46,9 @@ services:
       - USER_NAME=Rahul Sharma
       - USER_EMAIL=rahul.sharma@email.com
       - BANK_NAME=VaultGuard Bank
+      # IMPORTANT: Set a strong secret key for JWT signing in production
+      # Generate one with: python -c "import secrets; print(secrets.token_urlsafe(64))"
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY environment variable is required}
     ports:
       - "8080:8080"
     depends_on:
@@ -61,8 +64,7 @@ services:
   vaultguard-frontend:
     build: ./vaultguard-frontend
     container_name: vaultguard-frontend
-    ports:
-      - "5173:5173"
+    network_mode: host
     environment:
       - VITE_API_BASE_URL=http://localhost:8080
       - CHOKIDAR_USEPOLLING=true # Essential for hot reload on some systems
@@ -71,8 +73,6 @@ services:
       - /app/node_modules # Important: prevents local modules from clashing
     depends_on:
       - vaultguard-backend
-    networks:
-      - vaultguard-net
 
 # -----------------------------
 # Networks
