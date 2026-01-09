@@ -2,15 +2,18 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Install dependencies
 COPY package*.json ./
 RUN npm install
 
-# Copy source
-COPY . .
+# Create non-root user (Alpine uses adduser)
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-# Vite default port
+# Change ownership of node_modules so appuser can write to .vite-temp
+RUN chown -R appuser:appgroup /app/node_modules
+
+COPY --chown=appuser:appgroup . .
+
+USER appuser
+
 EXPOSE 5173
-
-# Essential: --host allows the container to expose the port to your laptop
 CMD ["npm", "run", "dev", "--", "--host"]
